@@ -1,138 +1,23 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { ImageUploader } from "@/app/components/ImageUploader";
+import { analyzeDamage } from "@/app/lib/api/analyzeDamage";
+import type {
+  DamageReport,
+  RoboflowResult,
+} from "@/app/types/damage";
 
-type RoboflowPrediction = {
-  x: number;
-  y: number;
+type BoxOverlay = {
+  id: number;
+  left: number;
+  top: number;
   width: number;
   height: number;
-  class: string;
-  confidence: number;
-};
-
-type RoboflowImageMeta = {
-  width: number;
-  height: number;
-};
-
-type RoboflowResult = {
-  predictions?: RoboflowPrediction[];
-  image?: RoboflowImageMeta;
-  [key: string]: any;
-};
-
-type DamageReport = {
-  pickup?: { filename?: string };
-  returned?: { filename?: string };
-  yolo?: RoboflowResult | null;
-  qwen?: {
-    description?: string;
-    severityScore?: number;
-  };
-  summary?: {
-    severityScore?: number;
-    estimatedRepairCost?: number;
-  };
-};
-
-const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
-
-/**
- * Generic image uploader with a grid and + Add box.
- */
-function ImageUploader({
-  label,
-  helper,
-  files,
-  setFiles,
-  max = 6,
-}: {
   label: string;
-  helper?: string;
-  files: File[];
-  setFiles: (f: File[]) => void;
-  max?: number;
-}) {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  const openFilePicker = () => {
-    if (fileInputRef.current) fileInputRef.current.click();
-  };
-
-  const handleAddFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newFiles = Array.from(e.target.files || []);
-    const merged = [...files, ...newFiles].slice(0, max);
-    setFiles(merged);
-    // allow selecting same file again later
-    e.target.value = "";
-  };
-
-  const handleRemove = (index: number) => {
-    setFiles(files.filter((_, i) => i !== index));
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <label className="block text-sm font-medium text-slate-200">
-            {label} <span className="text-xs text-slate-500">(max {max})</span>
-          </label>
-          {helper && (
-            <p className="text-[11px] text-slate-500 mt-0.5">{helper}</p>
-          )}
-        </div>
-      </div>
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        multiple
-        onChange={handleAddFiles}
-        className="hidden"
-      />
-
-      <div className="grid grid-cols-3 gap-3">
-        {/* Thumbnails */}
-        {files.map((file, idx) => (
-          <div
-            key={idx}
-            className="relative rounded-lg border border-slate-700 overflow-hidden bg-slate-900/60"
-          >
-            <img
-              src={URL.createObjectURL(file)}
-              className="w-full h-28 object-cover"
-              alt={`${label} ${idx + 1}`}
-            />
-            {/* Remove button */}
-            <button
-              type="button"
-              onClick={() => handleRemove(idx)}
-              className="absolute top-1 right-1 bg-red-600/90 hover:bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center"
-            >
-              ✕
-            </button>
-          </div>
-        ))}
-
-        {/* + Add button */}
-        {files.length < max && (
-          <button
-            type="button"
-            onClick={openFilePicker}
-            className="flex flex-col items-center justify-center rounded-lg border border-slate-700 border-dashed h-28 hover:bg-slate-800/60 transition"
-          >
-            <span className="text-4xl leading-none text-slate-400">+</span>
-            <span className="text-[11px] text-slate-400 mt-1">Add images</span>
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
+  confidence: number;
+  color: string;
+};
 
 export default function HomePage() {
   const [pickupFiles, setPickupFiles] = useState<File[]>([]);
@@ -143,7 +28,7 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<DamageReport | null>(null);
 
-  // 👇 When all images are cleared, reset report + error + preview
+  // When all images are cleared, reset report + error + preview
   useEffect(() => {
     if (pickupFiles.length === 0 && returnedFiles.length === 0) {
       setReport(null);
@@ -152,51 +37,38 @@ export default function HomePage() {
     }
   }, [pickupFiles, returnedFiles]);
 
+  // Keep preview synced with first returned file
+  useEffect(() => {
+    if (!returnedFiles[0]) {
+      setReturnPreviewUrl(null);
+      return;
+    }
+    const objectUrl = URL.createObjectURL(returnedFiles[0]);
+    setReturnPreviewUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [returnedFiles]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setReport(null);
 
-    if (pickupFiles.length === 0 || returnedFiles.length === 0) {
-      setError("Please select at least one pickup and one return image.");
-      return;
-    }
-
-    if (pickupFiles.length > 6 || returnedFiles.length > 6) {
-      setError("You can upload a maximum of 6 pickup and 6 return images.");
-      return;
-    }
-
     try {
       setIsLoading(true);
-
-      const formData = new FormData();
-      pickupFiles.forEach((file) => formData.append("pickup", file));
-      returnedFiles.forEach((file) => formData.append("returned", file));
-
-      const res = await fetch(`${BACKEND_URL}/api/analyze`, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody.error || "Failed to analyze images.");
-      }
-
-      const data: DamageReport = await res.json();
-      console.log("analyze result:", data);
+      const data = await analyzeDamage({ pickupFiles, returnedFiles });
       setReport(data);
-    } catch (err: any) {
+    } catch (err) {
       console.error("analyze error:", err);
-      setError(err.message || "Something went wrong.");
+      const message =
+        err instanceof Error ? err.message : "Something went wrong.";
+      setError(message);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Convert Roboflow predictions into overlay boxes (in percentages)
-  const yoloBoxes = useMemo(() => {
+  // YOLO overlays
+  const yoloBoxes: BoxOverlay[] = useMemo(() => {
     if (!report?.yolo?.predictions || !report.yolo.image) return [];
     const preds = report.yolo.predictions;
     const imgMeta = report.yolo.image;
@@ -205,21 +77,15 @@ export default function HomePage() {
     if (!iw || !ih) return [];
 
     return preds.map((p, i) => {
-      // Roboflow x,y are center coords
       const left = ((p.x - p.width / 2) / iw) * 100;
       const top = ((p.y - p.height / 2) / ih) * 100;
       const width = (p.width / iw) * 100;
       const height = (p.height / ih) * 100;
 
-      // Color by class name: Light / Moderate / Severe
       const cls = (p.class || "").toLowerCase();
-      let color = "rgba(34,197,94,0.9)"; // green = light
-      if (cls.includes("mod")) {
-        color = "rgba(234,179,8,0.9)"; // yellow = moderate
-      }
-      if (cls.includes("sev")) {
-        color = "rgba(248,113,113,0.9)"; // red = severe
-      }
+      let color = "rgba(34,197,94,0.9)"; // green default
+      if (cls.includes("mod")) color = "rgba(234,179,8,0.9)";
+      if (cls.includes("sev")) color = "rgba(248,113,113,0.9)";
 
       return {
         id: i,
@@ -233,15 +99,6 @@ export default function HomePage() {
       };
     });
   }, [report]);
-
-  // Keep preview synced with first returned file
-  const syncReturnPreview = (files: File[]) => {
-    if (files[0]) {
-      setReturnPreviewUrl(URL.createObjectURL(files[0]));
-    } else {
-      setReturnPreviewUrl(null);
-    }
-  };
 
   const handleClearAll = () => {
     setPickupFiles([]);
@@ -318,10 +175,7 @@ export default function HomePage() {
                     label="Return images"
                     helper="Capture the vehicle condition at return from similar angles."
                     files={returnedFiles}
-                    setFiles={(files) => {
-                      setReturnedFiles(files);
-                      syncReturnPreview(files);
-                    }}
+                    setFiles={setReturnedFiles}
                     max={6}
                   />
                 </div>
@@ -455,8 +309,8 @@ export default function HomePage() {
                   "No description returned by the AI service."}
               </p>
             </div>
-
-            {/* Raw JSON (debug section) */}
+            
+              {/* Raw JSON (debug section) */}
             <details className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 text-xs text-slate-400">
               <summary className="cursor-pointer text-slate-200 mb-2">
                 Raw response (Detections & Qwen JSON)
