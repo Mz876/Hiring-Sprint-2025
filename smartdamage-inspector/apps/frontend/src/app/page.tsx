@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 
 type RoboflowPrediction = {
   x: number;
@@ -39,9 +39,95 @@ type DamageReport = {
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
 
+/**
+ * Generic image uploader with a grid and + Add box.
+ */
+function ImageUploader({
+  label,
+  files,
+  setFiles,
+  max = 6,
+}: {
+  label: string;
+  files: File[];
+  setFiles: (f: File[]) => void;
+  max?: number;
+}) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const openFilePicker = () => {
+    if (fileInputRef.current) fileInputRef.current.click();
+  };
+
+  const handleAddFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newFiles = Array.from(e.target.files || []);
+    const merged = [...files, ...newFiles].slice(0, max);
+    setFiles(merged);
+    // allow selecting same file again later
+    e.target.value = "";
+  };
+
+  const handleRemove = (index: number) => {
+    setFiles(files.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="space-y-3">
+      <label className="block text-sm font-medium text-slate-200">
+        {label} (up to {max})
+      </label>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        onChange={handleAddFiles}
+        className="hidden"
+      />
+
+      <div className="grid grid-cols-3 gap-3">
+        {/* Thumbnails */}
+        {files.map((file, idx) => (
+          <div
+            key={idx}
+            className="relative rounded-lg border border-slate-700 overflow-hidden"
+          >
+            <img
+              src={URL.createObjectURL(file)}
+              className="w-full h-28 object-cover"
+              alt={`${label} ${idx + 1}`}
+            />
+            {/* Remove button */}
+            <button
+              type="button"
+              onClick={() => handleRemove(idx)}
+              className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+
+        {/* + Add button */}
+        {files.length < max && (
+          <button
+            type="button"
+            onClick={openFilePicker}
+            className="flex flex-col items-center justify-center rounded-lg border border-slate-700 border-dashed h-28 hover:bg-slate-800 transition"
+          >
+            <span className="text-4xl text-slate-400">+</span>
+            <span className="text-xs text-slate-400 mt-1">Add</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function HomePage() {
-  const [pickupFile, setPickupFile] = useState<File | null>(null);
-  const [returnedFile, setReturnedFile] = useState<File | null>(null);
+  const [pickupFiles, setPickupFiles] = useState<File[]>([]);
+  const [returnedFiles, setReturnedFiles] = useState<File[]>([]);
   const [returnPreviewUrl, setReturnPreviewUrl] = useState<string | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
@@ -53,8 +139,13 @@ export default function HomePage() {
     setError(null);
     setReport(null);
 
-    if (!pickupFile || !returnedFile) {
-      setError("Please select both pickup and return images.");
+    if (pickupFiles.length === 0 || returnedFiles.length === 0) {
+      setError("Please select at least one pickup and one return image.");
+      return;
+    }
+
+    if (pickupFiles.length > 6 || returnedFiles.length > 6) {
+      setError("You can upload a maximum of 6 pickup and 6 return images.");
       return;
     }
 
@@ -62,8 +153,8 @@ export default function HomePage() {
       setIsLoading(true);
 
       const formData = new FormData();
-      formData.append("pickup", pickupFile);
-      formData.append("returned", returnedFile);
+      pickupFiles.forEach((file) => formData.append("pickup", file));
+      returnedFiles.forEach((file) => formData.append("returned", file));
 
       const res = await fetch(`${BACKEND_URL}/api/analyze`, {
         method: "POST",
@@ -125,6 +216,15 @@ export default function HomePage() {
     });
   }, [report]);
 
+  // Keep preview synced with first returned file
+  const syncReturnPreview = (files: File[]) => {
+    if (files[0]) {
+      setReturnPreviewUrl(URL.createObjectURL(files[0]));
+    } else {
+      setReturnPreviewUrl(null);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4">
       <div className="w-full max-w-4xl space-y-8 py-10">
@@ -134,9 +234,9 @@ export default function HomePage() {
             SmartDamage Inspector
           </h1>
           <p className="text-slate-400 text-sm md:text-base">
-            Upload pickup and return photos of a vehicle. The backend will run
-            Roboflow (damage detection) and Qwen (damage description) and return
-            an assessment report.
+            Upload up to 6 pickup and 6 return photos of a vehicle. The backend
+            will run Roboflow (damage detection) and Qwen (damage description)
+            and return an assessment report.
           </p>
         </header>
 
@@ -144,106 +244,69 @@ export default function HomePage() {
         <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 shadow-lg">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid md:grid-cols-2 gap-6">
-              {/* Pickup */}
-              <div className="space-y-3">
-                <label className="block text-sm font-medium text-slate-200">
-                  Pickup image (before)
-                </label>
-                <div className="border border-dashed border-slate-700 rounded-xl p-4 flex flex-col items-center justify-center gap-3">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) =>
-                      setPickupFile(e.target.files?.[0] ?? null)
-                    }
-                    className="text-sm"
-                  />
-                  {pickupFile && (
-                    <div className="w-full text-xs text-slate-400">
-                      <p className="truncate">Selected: {pickupFile.name}</p>
-                      <div className="mt-2">
-                        <p className="mb-1">Preview:</p>
-                        <img
-                          src={URL.createObjectURL(pickupFile)}
-                          alt="Pickup preview"
-                          className="w-full h-40 object-cover rounded-lg border border-slate-700"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
+              {/* Pickup images */}
+              <ImageUploader
+                label="Pickup images (before)"
+                files={pickupFiles}
+                setFiles={setPickupFiles}
+                max={6}
+              />
 
-              {/* Returned */}
-              <div className="space-y-3">
-                <label className="block text-sm font-medium text-slate-200">
-                  Return image (after)
-                </label>
-                <div className="border border-dashed border-slate-700 rounded-xl p-4 flex flex-col items-center justify-center gap-3">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0] ?? null;
-                      setReturnedFile(file);
-                      if (file) {
-                        setReturnPreviewUrl(URL.createObjectURL(file));
-                      } else {
-                        setReturnPreviewUrl(null);
-                      }
-                    }}
-                    className="text-sm"
-                  />
+              {/* Returned images */}
+              <div className="space-y-4">
+                <ImageUploader
+                  label="Return images (after)"
+                  files={returnedFiles}
+                  setFiles={(files) => {
+                    setReturnedFiles(files);
+                    syncReturnPreview(files);
+                  }}
+                  max={6}
+                />
 
-                  {/* Returned image + damage boxes */}
-                  {returnedFile && returnPreviewUrl && (
-                    <div className="w-full text-xs text-slate-400">
-                      <p className="truncate">Selected: {returnedFile.name}</p>
-                      <div className="mt-2">
-                        <p className="mb-1">Preview with detected damage:</p>
-                        <div className="relative w-full h-40 border border-slate-700 rounded-lg overflow-hidden bg-black/40">
-                          {/* Image */}
-                          <img
-                            src={returnPreviewUrl}
-                            alt="Return preview"
-                            className="w-full h-full object-cover"
-                          />
-                          {/* Damage boxes from Roboflow */}
-                          {yoloBoxes.map((box) => (
-                            <div
-                              key={box.id}
-                              className="absolute border-2 rounded-sm"
-                              style={{
-                                left: `${box.left}%`,
-                                top: `${box.top}%`,
-                                width: `${box.width}%`,
-                                height: `${box.height}%`,
-                                borderColor: box.color,
-                              }}
-                            >
-                              <div
-                                className="absolute -top-5 left-0 px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-900"
-                                style={{ backgroundColor: box.color }}
-                              >
-                                {box.label}{" "}
-                                {box.confidence !== undefined &&
-                                  `(${(box.confidence * 100).toFixed(0)}%)`}
-                              </div>
-                            </div>
-                          ))}
+                {/* Preview with YOLO boxes on first return image */}
+                {returnedFiles.length > 0 && returnPreviewUrl && (
+                  <div className="w-full text-xs text-slate-400 space-y-2">
+                    <p>Preview with detected damage (first return image):</p>
+                    <div className="relative w-full h-40 border border-slate-700 rounded-lg overflow-hidden bg-black/40">
+                      <img
+                        src={returnPreviewUrl}
+                        alt="Return preview"
+                        className="w-full h-full object-cover"
+                      />
+                      {yoloBoxes.map((box) => (
+                        <div
+                          key={box.id}
+                          className="absolute border-2 rounded-sm"
+                          style={{
+                            left: `${box.left}%`,
+                            top: `${box.top}%`,
+                            width: `${box.width}%`,
+                            height: `${box.height}%`,
+                            borderColor: box.color,
+                          }}
+                        >
+                          <div
+                            className="absolute -top-5 left-0 px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-900"
+                            style={{ backgroundColor: box.color }}
+                          >
+                            {box.label}{" "}
+                            {box.confidence !== undefined &&
+                              `(${(box.confidence * 100).toFixed(0)}%)`}
+                          </div>
                         </div>
-                        {(!report?.yolo?.predictions ||
-                          report.yolo.predictions.length === 0) && (
-                          <p className="mt-1 text-[11px] text-slate-500">
-                            * Boxes will appear here after you click{" "}
-                            <span className="font-semibold">Analyze</span> and
-                            the detection finishes.
-                          </p>
-                        )}
-                      </div>
+                      ))}
                     </div>
-                  )}
-                </div>
+                    {(!report?.yolo?.predictions ||
+                      report.yolo.predictions.length === 0) && (
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        * Boxes will appear here after you click{" "}
+                        <span className="font-semibold">Analyze</span> and the
+                        detection finishes.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
