@@ -5,19 +5,25 @@ import { ImageUploader } from "@/app/components/ImageUploader";
 import { ReturnThumbnails } from "@/app/components/ReturnThumbnails";
 import { DamagePreview } from "@/app/components/DamagePreview";
 import { analyzeDamage } from "@/app/lib/api/analyzeDamage";
-import type { DamageReport, BoxOverlay, ReturnedImageAnalysis } from "@/app/types/damage";
+import type {
+  DamageReport,
+  BoxOverlay,
+  ReturnedImageAnalysis,
+  PerImageComparison,
+} from "@/app/types/damage";
 
 export default function HomePage() {
   const [pickupFiles, setPickupFiles] = useState<File[]>([]);
   const [returnedFiles, setReturnedFiles] = useState<File[]>([]);
   const [activeReturnIndex, setActiveReturnIndex] = useState(0);
-  const [activeReturnPreviewUrl, setActiveReturnPreviewUrl] = useState<string | null>(null);
+  const [activeReturnPreviewUrl, setActiveReturnPreviewUrl] =
+    useState<string | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<DamageReport | null>(null);
 
-  // When all images are cleared, reset report + error + preview
+  // Reset when everything cleared
   useEffect(() => {
     if (pickupFiles.length === 0 && returnedFiles.length === 0) {
       setReport(null);
@@ -27,7 +33,7 @@ export default function HomePage() {
     }
   }, [pickupFiles, returnedFiles]);
 
-  // Keep activeReturnIndex in range when returnedFiles changes
+  // Keep active index in range
   useEffect(() => {
     if (returnedFiles.length === 0) {
       setActiveReturnIndex(0);
@@ -39,7 +45,7 @@ export default function HomePage() {
     }
   }, [returnedFiles, activeReturnIndex]);
 
-  // Update preview URL when activeReturnIndex or returnedFiles changes
+  // Preview URL for active return file
   useEffect(() => {
     if (returnedFiles.length === 0) {
       setActiveReturnPreviewUrl(null);
@@ -79,11 +85,21 @@ export default function HomePage() {
     }
   };
 
-  // Helper: get current analysis object for the active index
+  // Per-image analysis for active return
   const currentAnalysis: ReturnedImageAnalysis | undefined =
     report?.returnedAnalyses?.[activeReturnIndex];
 
-  // YOLO overlays – NOW PER IMAGE 🧨
+  // Comparison entry for active image (new vs pre-existing)
+  const currentComparison: PerImageComparison | null = useMemo(() => {
+    if (!report?.comparison?.perImage) return null;
+    return (
+      report.comparison.perImage.find(
+        (c) => c.returnImageIndex === activeReturnIndex
+      ) ?? null
+    );
+  }, [report, activeReturnIndex]);
+
+  // YOLO overlays for current image
   const yoloBoxes: BoxOverlay[] = useMemo(() => {
     if (!currentAnalysis?.yolo?.predictions || !currentAnalysis.yolo.image) {
       return [];
@@ -102,7 +118,7 @@ export default function HomePage() {
       const height = (p.height / ih) * 100;
 
       const cls = (p.class || "").toLowerCase();
-      let color = "rgba(34,197,94,0.9)"; // green default
+      let color = "rgba(34,197,94,0.9)"; // default green
       if (cls.includes("mod")) color = "rgba(234,179,8,0.9)";
       if (cls.includes("sev")) color = "rgba(248,113,113,0.9)";
 
@@ -142,7 +158,6 @@ export default function HomePage() {
     !!currentAnalysis?.yolo?.predictions &&
     currentAnalysis.yolo.predictions.length > 0;
 
-  // Choose per-image Qwen description if available, otherwise fall back to global
   const activeDescription =
     currentAnalysis?.qwen?.description ?? report?.qwen?.description;
 
@@ -216,7 +231,6 @@ export default function HomePage() {
                   />
                 </div>
 
-                {/* Thumbnails strip */}
                 <ReturnThumbnails
                   files={returnedFiles}
                   activeIndex={activeReturnIndex}
@@ -258,6 +272,7 @@ export default function HomePage() {
               imageUrl={activeReturnPreviewUrl}
               boxes={yoloBoxes}
               hasDetections={hasDetections}
+              comparisonForImage={currentComparison ?? undefined}
             />
 
             {/* Report / Analysis Panel */}
@@ -265,7 +280,7 @@ export default function HomePage() {
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg space-y-6">
                 <h2 className="text-lg font-semibold">Inspection Report</h2>
 
-                {/* High-level summary (worst image) */}
+                {/* Summary */}
                 <div className="grid grid-cols-1 gap-3 text-sm">
                   <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
                     <p className="text-xs uppercase text-slate-500 mb-1">
@@ -301,13 +316,15 @@ export default function HomePage() {
                     <p className="text-sm">
                       <span className="block">
                         Pickup:{" "}
-                        {report.pickup?.filenames
+                        {report.pickup?.filenames &&
+                        report.pickup.filenames.length
                           ? report.pickup.filenames.join(", ")
                           : "N/A"}
                       </span>
                       <span className="block">
                         Return:{" "}
-                        {report.returned?.filenames
+                        {report.returned?.filenames &&
+                        report.returned.filenames.length
                           ? report.returned.filenames.join(", ")
                           : "N/A"}
                       </span>
@@ -315,7 +332,7 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                {/* Qwen description (per active image) */}
+                {/* Per-image Qwen description */}
                 <div className="space-y-2">
                   <h3 className="text-sm font-semibold text-slate-200">
                     AI Damage Narrative (selected image)
@@ -325,16 +342,6 @@ export default function HomePage() {
                       "No description returned by the AI service for this image."}
                   </p>
                 </div>
-
-                {/* Raw JSON (debug section) */}
-                <details className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 text-xs text-slate-400">
-                  <summary className="cursor-pointer text-slate-200 mb-2">
-                    Raw response (Detections & Qwen JSON)
-                  </summary>
-                  <pre className="mt-2 whitespace-pre-wrap break-all">
-                    {JSON.stringify(report, null, 2)}
-                  </pre>
-                </details>
               </div>
             )}
           </section>

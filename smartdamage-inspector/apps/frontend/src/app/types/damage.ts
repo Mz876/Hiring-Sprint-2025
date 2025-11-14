@@ -7,6 +7,7 @@ export type RoboflowPrediction = {
   height: number;
   class: string;
   confidence: number;
+  [key: string]: any;
 };
 
 export type RoboflowImageMeta = {
@@ -20,44 +21,85 @@ export type RoboflowResult = {
   [key: string]: any;
 };
 
-export type ReturnedImageAnalysis = {
+export type QwenResult = {
+  description?: string;
+  severityScore?: number;
+  mock?: boolean;
+};
+
+export type SingleImageAnalysis = {
   index: number;
   filename: string;
-  yolo?: RoboflowResult | null;
-  qwen?: {
-    description?: string;
-    severityScore?: number;
-  };
-  severityScore?: number;
+  hash?: string;
+  yolo: RoboflowResult | null;
+  qwen: QwenResult;
+  severityScore: number;
+};
+
+export type ReturnedImageAnalysis = SingleImageAnalysis;
+
+export type DamagePairing = {
+  returnIndex: number;
+  returnFilename: string;
+  pickupIndex: number | null;
+  pickupFilename: string | null;
+  score: number;
+};
+
+export type PerImageComparison = {
+  returnImageIndex: number;
+  returnFilename: string;
+  pairedPickupIndex: number | null;
+  pairedPickupFilename: string | null;
+  newDamages: Array<{
+    class: string;
+    confidenceReturn: number;
+    returnImageIndex: number;
+    returnFilename: string;
+  }>;
+  preExistingDamages: Array<{
+    class: string;
+    confidenceReturn: number;
+    confidencePickup: number;
+    pickupImageIndex: number | null;
+    pickupFilename: string | null;
+    returnImageIndex: number;
+    returnFilename: string;
+    iou: number;
+  }>;
+  returnSeverity: number;
+  pickupSeverity: number | null;
+};
+
+export type DamageComparison = {
+  perImage: PerImageComparison[];
+  newDamages: PerImageComparison["newDamages"][number][];
+  preExistingDamages: PerImageComparison["preExistingDamages"][number][];
 };
 
 export type DamageSummary = {
   severityScore: number;
   estimatedRepairCost: number;
-  worstImageIndex?: number;
-  worstImageFilename?: string;
+  worstImageIndex: number | null;
+  worstImageFilename: string | null;
 };
 
 export type DamageReport = {
   pickup?: {
-    filenames: string[];
+    filenames?: string[];
+    analyses?: SingleImageAnalysis[];
   };
   returned?: {
-    filenames: string[];
+    filenames?: string[];
+    analyses?: ReturnedImageAnalysis[];
   };
-  // Per-return-image analyses (what we want for the preview)
   returnedAnalyses?: ReturnedImageAnalysis[];
-
-  // Optional “worst image” aggregate (like in your JSON)
   yolo?: RoboflowResult | null;
-  qwen?: {
-    description?: string;
-    severityScore?: number;
-  };
+  qwen?: QwenResult | null;
+  comparison?: DamageComparison;
   summary?: DamageSummary;
 };
 
-// Overlay box used by the UI
 export type BoxOverlay = {
   id: number;
   left: number;

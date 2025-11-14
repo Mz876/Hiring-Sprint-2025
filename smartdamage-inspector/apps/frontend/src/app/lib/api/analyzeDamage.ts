@@ -1,20 +1,16 @@
 // app/lib/api/analyzeDamage.ts
-
 import type { DamageReport } from "@/app/types/damage";
 
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
 
-type AnalyzeDamageParams = {
+export async function analyzeDamage(params: {
   pickupFiles: File[];
   returnedFiles: File[];
-};
+}): Promise<DamageReport> {
+  const { pickupFiles, returnedFiles } = params;
 
-export async function analyzeDamage({
-  pickupFiles,
-  returnedFiles,
-}: AnalyzeDamageParams): Promise<DamageReport> {
-  if (pickupFiles.length === 0 || returnedFiles.length === 0) {
+  if (!pickupFiles.length || !returnedFiles.length) {
     throw new Error("Please select at least one pickup and one return image.");
   }
 

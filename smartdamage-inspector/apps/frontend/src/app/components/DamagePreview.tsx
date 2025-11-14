@@ -1,13 +1,15 @@
 // app/components/DamagePreview.tsx
 "use client";
 
-import type { BoxOverlay } from "@/app/types/damage";
+import React from "react";
+import type { BoxOverlay, PerImageComparison } from "@/app/types/damage";
 
-type DamagePreviewProps = {
+type Props = {
   label: string;
   imageUrl: string | null;
   boxes: BoxOverlay[];
   hasDetections: boolean;
+  comparisonForImage?: PerImageComparison | null;
 };
 
 export function DamagePreview({
@@ -15,24 +17,30 @@ export function DamagePreview({
   imageUrl,
   boxes,
   hasDetections,
-}: DamagePreviewProps) {
+  comparisonForImage,
+}: Props) {
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 md:p-6 shadow-lg space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs uppercase text-slate-500 mb-1">
-            Damage preview
-          </p>
-          <p className="text-sm text-slate-300">{label}</p>
-        </div>
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 md:p-6 shadow-lg space-y-4">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-slate-100 truncate">
+          {label}
+        </h2>
+        {comparisonForImage?.pairedPickupFilename && (
+          <span className="text-[11px] text-slate-400">
+            Matched with pickup:{" "}
+            <span className="text-slate-200">
+              {comparisonForImage.pairedPickupFilename}
+            </span>
+          </span>
+        )}
       </div>
 
-      <div className="relative w-full aspect-video border border-slate-800 rounded-xl overflow-hidden bg-black/40">
+      <div className="relative w-full h-64 border border-slate-800 rounded-xl overflow-hidden bg-black/40 flex items-center justify-center">
         {imageUrl ? (
           <>
             <img
               src={imageUrl}
-              alt="Active return preview"
+              alt={label}
               className="w-full h-full object-cover"
             />
             {boxes.map((box) => (
@@ -59,16 +67,32 @@ export function DamagePreview({
             ))}
           </>
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-xs text-slate-500">
-            No return image selected.
-          </div>
+          <p className="text-xs text-slate-500">
+            Select a return image to see damage overlay.
+          </p>
         )}
       </div>
 
-      {!hasDetections && (
+      {/* Mini legend for new vs pre-existing if we have comparison */}
+      {comparisonForImage && (
+        <div className="text-[11px] text-slate-400 space-y-1">
+          <p className="font-semibold text-slate-300">Damage summary (this image)</p>
+          <p>
+            New damage:{" "}
+            <span className="text-rose-400 font-medium">
+              {comparisonForImage.newDamages.length}
+            </span>{" "}
+            · Pre-existing:{" "}
+            <span className="text-emerald-300 font-medium">
+              {comparisonForImage.preExistingDamages.length}
+            </span>
+          </p>
+        </div>
+      )}
+
+      {!hasDetections && imageUrl && (
         <p className="text-[11px] text-slate-500">
-          * No damage boxes detected or detection not run yet. Try uploading a
-          clearer return image and analyzing again.
+          No damage detected for this image with the current model/thresholds.
         </p>
       )}
     </div>
