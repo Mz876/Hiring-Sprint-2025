@@ -223,6 +223,64 @@ function comparePickupAndReturn(pickupAnalyses, returnedAnalyses, pairings) {
   };
 }
 
+// ---------- Summary (real-world-ish) ----------------------------------
+
+function buildDamageSummary(returnedAnalyses, comparison) {
+  if (!returnedAnalyses.length) {
+    return {
+      maxSeverity: 0,
+      avgSeverity: 0,
+      totalSeverity: 0,
+      severityScore: 0,
+      estimatedRepairCost: 0,
+      worstImageIndex: null,
+      worstImageFilename: null,
+    };
+  }
+
+  // Prefer images with NEW damage; if none, use all returned images.
+  const newDamageImageIndexes = new Set(
+    comparison.perImage
+      .filter((img) => img.newDamages.length > 0)
+      .map((img) => img.returnImageIndex)
+  );
+
+  const relevantAnalyses =
+    newDamageImageIndexes.size > 0
+      ? returnedAnalyses.filter((ret) => newDamageImageIndexes.has(ret.index))
+      : returnedAnalyses;
+
+  const severities = relevantAnalyses.map((r) => r.severityScore);
+  const totalSeverity = severities.reduce((sum, s) => sum + s, 0);
+  const maxSeverity = Math.max(...severities);
+  const avgSeverity = severities.length ? totalSeverity / severities.length : 0;
+
+  // Pick worst image among relevant
+  const worst = relevantAnalyses.reduce((max, curr) =>
+    curr.severityScore > max.severityScore ? curr : max
+  );
+
+  // Real-world style cost model:
+  // - base fee for any incident
+  // - plus extra cost per unit of total severity
+  const BASE_FEE = 150;
+  const COST_PER_SEVERITY_UNIT = 850;
+  const estimatedRepairCost = Math.round(
+    BASE_FEE + totalSeverity * COST_PER_SEVERITY_UNIT
+  );
+
+  return {
+    maxSeverity,
+    avgSeverity,
+    totalSeverity,
+    // keep old field name for compatibility
+    severityScore: maxSeverity,
+    estimatedRepairCost,
+    worstImageIndex: worst ? worst.index : null,
+    worstImageFilename: worst ? worst.filename : null,
+  };
+}
+
 // ---------- High-level service API -----------------------------------
 
 /**
@@ -250,37 +308,17 @@ async function analyzePickupAndReturnImages(pickupFiles, returnFiles) {
     pairings
   );
 
-  // 5) severity & cost from new damages if any
-  const newDamageImageIndexes = new Set(
-    comparison.perImage
-      .filter((img) => img.newDamages.length > 0)
-      .map((img) => img.returnImageIndex)
-  );
-
-  const newDamageAnalyses = returnedAnalyses.filter((ret) =>
-    newDamageImageIndexes.has(ret.index)
-  );
-
-  let overallSeverity = 0;
-  let worst = null;
-
-  if (newDamageAnalyses.length > 0) {
-    worst = newDamageAnalyses.reduce((max, curr) =>
-      curr.severityScore > max.severityScore ? curr : max
-    );
-    overallSeverity = worst.severityScore;
-  } else if (returnedAnalyses.length > 0) {
-    // fallback: no newly detected damage – use worst overall
-    worst = returnedAnalyses.reduce((max, curr) =>
-      curr.severityScore > max.severityScore ? curr : max
-    );
-    overallSeverity = worst.severityScore;
-  }
-
-  const estimatedRepairCost = Math.round(overallSeverity * 1000);
+  // 5) compute summary with total/max/avg severity & cost
+  const summary = buildDamageSummary(returnedAnalyses, comparison);
 
   const pickupNames = pickupFiles.map((f) => f.originalname);
   const returnNames = returnFiles.map((f) => f.originalname);
+
+  // The "worst" image for convenience (align with summary.severityScore)
+  const worst =
+    summary.worstImageIndex != null
+      ? returnedAnalyses.find((r) => r.index === summary.worstImageIndex)
+      : null;
 
   return {
     pickup: {
@@ -291,18 +329,16 @@ async function analyzePickupAndReturnImages(pickupFiles, returnFiles) {
       filenames: returnNames,
       analyses: returnedAnalyses,
     },
+
     // what the UI already consumes
     returnedAnalyses,
     comparison,
+
     // legacy / convenience fields
     yolo: worst ? worst.yolo : null,
     qwen: worst ? worst.qwen : null,
-    summary: {
-      severityScore: overallSeverity,
-      estimatedRepairCost,
-      worstImageIndex: worst ? worst.index : null,
-      worstImageFilename: worst ? worst.filename : null,
-    },
+
+    summary,
   };
 }
 

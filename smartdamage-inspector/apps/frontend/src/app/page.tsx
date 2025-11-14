@@ -4,6 +4,8 @@ import { useState, useMemo, useEffect } from "react";
 import { ImageUploader } from "@/app/components/ImageUploader";
 import { ReturnThumbnails } from "@/app/components/ReturnThumbnails";
 import { DamagePreview } from "@/app/components/DamagePreview";
+import { DamagePreviewSkeleton } from "@/app/components/DamagePreviewSkeleton";
+import { ReportSkeleton } from "@/app/components/ReportSkeleton";
 import { analyzeDamage } from "@/app/lib/api/analyzeDamage";
 import type {
   DamageReport,
@@ -159,7 +161,7 @@ export default function HomePage() {
     currentAnalysis.yolo.predictions.length > 0;
 
   const activeDescription =
-    currentAnalysis?.qwen?.description ?? report?.qwen?.description;
+    currentAnalysis?.qwen?.description ?? report?.qwen?.description ?? null;
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4">
@@ -264,85 +266,140 @@ export default function HomePage() {
         </section>
 
         {/* Damage Preview + Report */}
-        {(activeReturnPreviewUrl || report) && (
+        {(activeReturnPreviewUrl || report || isLoading) && (
           <section className="grid md:grid-cols-2 gap-6">
-            {/* Big Damage Preview */}
-            <DamagePreview
-              label={activeReturnLabel}
-              imageUrl={activeReturnPreviewUrl}
-              boxes={yoloBoxes}
-              hasDetections={hasDetections}
-              comparisonForImage={currentComparison ?? undefined}
-            />
+            {/* Left: Damage Preview / Skeleton */}
+            {isLoading && !report ? (
+              <DamagePreviewSkeleton />
+            ) : (
+              <DamagePreview
+                label={activeReturnLabel}
+                imageUrl={activeReturnPreviewUrl}
+                boxes={yoloBoxes}
+                hasDetections={hasDetections}
+                comparisonForImage={currentComparison ?? undefined}
+              />
+            )}
 
-            {/* Report / Analysis Panel */}
-            {report && (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg space-y-6">
-                <h2 className="text-lg font-semibold">Inspection Report</h2>
+            {/* Right: Report / Skeleton */}
+            {isLoading && !report ? (
+              <ReportSkeleton />
+            ) : (
+              report && (
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg space-y-6">
+                  <h2 className="text-lg font-semibold">Inspection Report</h2>
 
-                {/* Summary */}
-                <div className="grid grid-cols-1 gap-3 text-sm">
-                  <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
-                    <p className="text-xs uppercase text-slate-500 mb-1">
-                      Severity (worst image)
-                    </p>
-                    <p className="text-lg font-semibold">
-                      {report.summary?.severityScore !== undefined
-                        ? `${Math.round(
-                            (report.summary.severityScore ?? 0) * 100
-                          )} / 100`
-                        : "N/A"}
-                    </p>
-                    {report.summary?.worstImageFilename && (
-                      <p className="text-xs text-slate-500 mt-1">
-                        Worst: {report.summary.worstImageFilename}
+                  {/* Summary */}
+                  <div className="grid grid-cols-1 gap-3 text-sm">
+                    <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
+                      <p className="text-xs uppercase text-slate-500 mb-1">
+                        Severity (worst image)
                       </p>
-                    )}
-                  </div>
-                  <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
-                    <p className="text-xs uppercase text-slate-500 mb-1">
-                      Estimated repair cost
-                    </p>
-                    <p className="text-lg font-semibold">
-                      {report.summary?.estimatedRepairCost !== undefined
-                        ? `$${report.summary.estimatedRepairCost}`
-                        : "N/A"}
-                    </p>
-                  </div>
-                  <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
-                    <p className="text-xs uppercase text-slate-500 mb-1">
-                      Files analyzed
-                    </p>
-                    <p className="text-sm">
-                      <span className="block">
-                        Pickup:{" "}
-                        {report.pickup?.filenames &&
-                        report.pickup.filenames.length
-                          ? report.pickup.filenames.join(", ")
+                      <p className="text-lg font-semibold">
+                        {report.summary?.severityScore !== undefined
+                          ? `${Math.round(
+                              (report.summary.severityScore ?? 0) * 100
+                            )} / 100`
                           : "N/A"}
-                      </span>
-                      <span className="block">
-                        Return:{" "}
-                        {report.returned?.filenames &&
-                        report.returned.filenames.length
-                          ? report.returned.filenames.join(", ")
-                          : "N/A"}
-                      </span>
-                    </p>
-                  </div>
-                </div>
+                      </p>
+                      {report.summary?.worstImageFilename && (
+                        <p className="text-xs text-slate-500 mt-1">
+                          Worst: {report.summary.worstImageFilename}
+                        </p>
+                      )}
+                    </div>
 
-                {/* Per-image Qwen description */}
-                <div className="space-y-2">
-                  <h3 className="text-sm font-semibold text-slate-200">
-                    AI Damage Narrative (selected image)
-                  </h3>
-                  <p className="text-sm text-slate-300 bg-slate-950/60 border border-slate-800 rounded-xl p-4">
-                    {activeDescription ??
-                      "No description returned by the AI service for this image."}
-                  </p>
+                   {report?.summary && (
+  <div className="grid grid-cols-1 gap-3 text-sm">
+    <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
+      <p className="text-xs uppercase text-slate-500 mb-1">
+        Worst single view
+      </p>
+      <p className="text-lg font-semibold">
+        {Math.round(report.summary.maxSeverity * 100)} / 100
+      </p>
+      {report.summary.worstImageFilename && (
+        <p className="text-xs text-slate-500 mt-1">
+          Worst: {report.summary.worstImageFilename}
+        </p>
+      )}
+    </div>
+
+    <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
+      <p className="text-xs uppercase text-slate-500 mb-1">
+        Overall damage (all images)
+      </p>
+      <p className="text-xs text-slate-400">
+        Total severity:{" "}
+        <span className="font-semibold text-slate-200">
+          {report.summary.totalSeverity.toFixed(2)}
+        </span>
+        <br />
+        Avg severity per view:{" "}
+        <span className="font-semibold text-slate-200">
+          {report.summary.avgSeverity.toFixed(2)}
+        </span>
+      </p>
+    </div>
+
+    <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
+      <p className="text-xs uppercase text-slate-500 mb-1">
+        Estimated repair cost
+      </p>
+      <p className="text-lg font-semibold">
+        ${report.summary.estimatedRepairCost}
+      </p>
+    </div>
+  </div>
+                    )}
+
+
+                    <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
+                      <p className="text-xs uppercase text-slate-500 mb-1">
+                        Estimated repair cost
+                      </p>
+                      <p className="text-lg font-semibold">
+                        {report.summary?.estimatedRepairCost !== undefined
+                          ? `$${report.summary.estimatedRepairCost}`
+                          : "N/A"}
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
+                      <p className="text-xs uppercase text-slate-500 mb-1">
+                        Files analyzed
+                      </p>
+                      <p className="text-sm">
+                        <span className="block">
+                          Pickup:{" "}
+                          {report.pickup?.filenames &&
+                          report.pickup.filenames.length
+                            ? report.pickup.filenames.join(", ")
+                            : "N/A"}
+                        </span>
+                        <span className="block">
+                          Return:{" "}
+                          {report.returned?.filenames &&
+                          report.returned.filenames.length
+                            ? report.returned.filenames.join(", ")
+                            : "N/A"}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Per-image Qwen description */}
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-semibold text-slate-200">
+                      AI Damage Narrative (selected image)
+                    </h3>
+                    <p className="text-sm text-slate-300 bg-slate-950/60 border border-slate-800 rounded-xl p-4">
+                      {activeDescription ??
+                        "No description returned by the AI service for this image."}
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )
             )}
           </section>
         )}

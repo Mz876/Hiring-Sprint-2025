@@ -1,4 +1,3 @@
-// app/types/damage.ts
 
 export type RoboflowPrediction = {
   x: number;
@@ -51,12 +50,14 @@ export type PerImageComparison = {
   returnFilename: string;
   pairedPickupIndex: number | null;
   pairedPickupFilename: string | null;
+
   newDamages: Array<{
     class: string;
     confidenceReturn: number;
     returnImageIndex: number;
     returnFilename: string;
   }>;
+
   preExistingDamages: Array<{
     class: string;
     confidenceReturn: number;
@@ -67,6 +68,7 @@ export type PerImageComparison = {
     returnFilename: string;
     iou: number;
   }>;
+
   returnSeverity: number;
   pickupSeverity: number | null;
 };
@@ -77,8 +79,19 @@ export type DamageComparison = {
   preExistingDamages: PerImageComparison["preExistingDamages"][number][];
 };
 
+/**
+ * Aggregated summary over ALL returned images.
+ * Real-world-ish model:
+ * - maxSeverity: worst single view
+ * - avgSeverity: average over all return images
+ * - totalSeverity: sum over all return images (used for cost)
+ * - severityScore: kept for backward compat; alias of maxSeverity
+ */
 export type DamageSummary = {
-  severityScore: number;
+  maxSeverity: number;
+  avgSeverity: number;
+  totalSeverity: number;
+  severityScore: number; // = maxSeverity
   estimatedRepairCost: number;
   worstImageIndex: number | null;
   worstImageFilename: string | null;
@@ -93,9 +106,18 @@ export type DamageReport = {
     filenames?: string[];
     analyses?: ReturnedImageAnalysis[];
   };
+
+  /**
+   * Convenience alias used by the UI (per-image analyses for all returned images)
+   */
   returnedAnalyses?: ReturnedImageAnalysis[];
+
+  /**
+   * For backward compatibility / convenience, often the "worst" image analysis
+   */
   yolo?: RoboflowResult | null;
   qwen?: QwenResult | null;
+
   comparison?: DamageComparison;
   summary?: DamageSummary;
 };
