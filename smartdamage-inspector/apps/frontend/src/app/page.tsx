@@ -2,27 +2,18 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { ImageUploader } from "@/app/components/ImageUploader";
+import { ReturnThumbnails } from "./components/ReturnThumbnails";
+import { DamagePreview } from "./components/DamagePreview";
 import { analyzeDamage } from "@/app/lib/api/analyzeDamage";
-import type {
-  DamageReport,
-  RoboflowResult,
-} from "@/app/types/damage";
-
-type BoxOverlay = {
-  id: number;
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-  label: string;
-  confidence: number;
-  color: string;
-};
+import type { DamageReport, BoxOverlay } from "@/app/types/damage";
 
 export default function HomePage() {
   const [pickupFiles, setPickupFiles] = useState<File[]>([]);
   const [returnedFiles, setReturnedFiles] = useState<File[]>([]);
-  const [returnPreviewUrl, setReturnPreviewUrl] = useState<string | null>(null);
+  const [activeReturnIndex, setActiveReturnIndex] = useState(0);
+  const [activeReturnPreviewUrl, setActiveReturnPreviewUrl] = useState<
+    string | null
+  >(null);
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,20 +24,43 @@ export default function HomePage() {
     if (pickupFiles.length === 0 && returnedFiles.length === 0) {
       setReport(null);
       setError(null);
-      setReturnPreviewUrl(null);
+      setActiveReturnPreviewUrl(null);
+      setActiveReturnIndex(0);
     }
   }, [pickupFiles, returnedFiles]);
 
-  // Keep preview synced with first returned file
+  // Keep activeReturnIndex in range when returnedFiles changes
   useEffect(() => {
-    if (!returnedFiles[0]) {
-      setReturnPreviewUrl(null);
+    if (returnedFiles.length === 0) {
+      setActiveReturnIndex(0);
+      setActiveReturnPreviewUrl(null);
       return;
     }
-    const objectUrl = URL.createObjectURL(returnedFiles[0]);
-    setReturnPreviewUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [returnedFiles]);
+    if (activeReturnIndex >= returnedFiles.length) {
+      setActiveReturnIndex(0);
+    }
+  }, [returnedFiles, activeReturnIndex]);
+
+  // Update preview URL when activeReturnIndex or returnedFiles changes
+  useEffect(() => {
+    if (returnedFiles.length === 0) {
+      setActiveReturnPreviewUrl(null);
+      return;
+    }
+
+    const file = returnedFiles[activeReturnIndex] ?? returnedFiles[0];
+    if (!file) {
+      setActiveReturnPreviewUrl(null);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    setActiveReturnPreviewUrl(objectUrl);
+
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [returnedFiles, activeReturnIndex]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,15 +119,24 @@ export default function HomePage() {
     setReturnedFiles([]);
     setReport(null);
     setError(null);
-    setReturnPreviewUrl(null);
+    setActiveReturnPreviewUrl(null);
+    setActiveReturnIndex(0);
   };
 
   const analyzeDisabled =
     isLoading || pickupFiles.length === 0 || returnedFiles.length === 0;
 
+  const activeReturnLabel =
+    returnedFiles.length > 0
+      ? `Return ${activeReturnIndex + 1} of ${returnedFiles.length}`
+      : "No return image selected";
+
+  const hasDetections =
+    !!report?.yolo?.predictions && report.yolo.predictions.length > 0;
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4">
-      <div className="w-full max-w-4xl space-y-8 py-10">
+      <div className="w-full max-w-5xl space-y-8 py-10">
         {/* Header */}
         <header className="space-y-2">
           <p className="text-xs uppercase tracking-[0.2em] text-emerald-400">
@@ -129,7 +152,7 @@ export default function HomePage() {
           </p>
         </header>
 
-        {/* Form */}
+        {/* Form & Uploads */}
         <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 shadow-lg space-y-4">
           <div className="flex items-center justify-between mb-2">
             <div>
@@ -150,6 +173,7 @@ export default function HomePage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Pickup & Return Upload Grids */}
             <div className="grid md:grid-cols-2 gap-6">
               {/* Pickup images */}
               <div className="space-y-2">
@@ -180,54 +204,12 @@ export default function HomePage() {
                   />
                 </div>
 
-                {/* Preview with YOLO boxes on first return image */}
-                {returnedFiles.length > 0 && returnPreviewUrl && (
-                  <div className="w-full text-xs text-slate-400 space-y-2">
-                    <p className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                      Preview with detected damage (first return image)
-                    </p>
-                    <div className="relative w-full h-40 border border-slate-700 rounded-lg overflow-hidden bg-black/40">
-                      <img
-                        src={returnPreviewUrl}
-                        alt="Return preview"
-                        className="w-full h-full object-cover"
-                      />
-                      {yoloBoxes.map((box) => (
-                        <div
-                          key={box.id}
-                          className="absolute border-2 rounded-sm"
-                          style={{
-                            left: `${box.left}%`,
-                            top: `${box.top}%`,
-                            width: `${box.width}%`,
-                            height: `${box.height}%`,
-                            borderColor: box.color,
-                          }}
-                        >
-                          <div
-                            className="absolute -top-5 left-0 px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-900 shadow-sm"
-                            style={{ backgroundColor: box.color }}
-                          >
-                            {box.label}{" "}
-                            {box.confidence !== undefined &&
-                              `(${(box.confidence * 100).toFixed(0)}%)`}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    {(!report?.yolo?.predictions ||
-                      report.yolo.predictions.length === 0) && (
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        * Boxes will appear here after you click{" "}
-                        <span className="font-semibold text-slate-300">
-                          Analyze Damage
-                        </span>
-                        .
-                      </p>
-                    )}
-                  </div>
-                )}
+                {/* Thumbnails strip */}
+                <ReturnThumbnails
+                  files={returnedFiles}
+                  activeIndex={activeReturnIndex}
+                  onChange={setActiveReturnIndex}
+                />
               </div>
             </div>
 
@@ -255,70 +237,83 @@ export default function HomePage() {
           </form>
         </section>
 
-        {/* Report */}
-        {report && (
-          <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 shadow-lg space-y-6">
-            <h2 className="text-xl font-semibold">Inspection Report</h2>
+        {/* Damage Preview + Report */}
+        {(activeReturnPreviewUrl || report) && (
+          <section className="grid md:grid-cols-2 gap-6">
+            {/* Big Damage Preview */}
+            <DamagePreview
+              label={activeReturnLabel}
+              imageUrl={activeReturnPreviewUrl}
+              boxes={yoloBoxes}
+              hasDetections={hasDetections}
+            />
 
-            {/* High-level summary */}
-            <div className="grid md:grid-cols-3 gap-4 text-sm">
-              <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
-                <p className="text-xs uppercase text-slate-500 mb-1">
-                  Severity
-                </p>
-                <p className="text-lg font-semibold">
-                  {report.summary?.severityScore !== undefined
-                    ? `${Math.round(
-                        (report.summary.severityScore ?? 0) * 100
-                      )} / 100`
-                    : "N/A"}
-                </p>
-              </div>
-              <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
-                <p className="text-xs uppercase text-slate-500 mb-1">
-                  Estimated repair cost
-                </p>
-                <p className="text-lg font-semibold">
-                  {report.summary?.estimatedRepairCost !== undefined
-                    ? `$${report.summary.estimatedRepairCost}`
-                    : "N/A"}
-                </p>
-              </div>
-              <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
-                <p className="text-xs uppercase text-slate-500 mb-1">
-                  Files analyzed
-                </p>
-                <p className="text-sm">
-                  <span className="block truncate">
-                    Pickup: {report.pickup?.filename ?? "N/A"}
-                  </span>
-                  <span className="block truncate">
-                    Return: {report.returned?.filename ?? "N/A"}
-                  </span>
-                </p>
-              </div>
-            </div>
+            {/* Report / Analysis Panel */}
+            {report && (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg space-y-6">
+                <h2 className="text-lg font-semibold">Inspection Report</h2>
 
-            {/* Qwen description */}
-            <div className="space-y-2">
-              <h3 className="text-sm font-semibold text-slate-200">
-                AI Damage Narrative
-              </h3>
-              <p className="text-sm text-slate-300 bg-slate-950/60 border border-slate-800 rounded-xl p-4">
-                {report.qwen?.description ??
-                  "No description returned by the AI service."}
-              </p>
-            </div>
-            
-              {/* Raw JSON (debug section) */}
-            <details className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 text-xs text-slate-400">
-              <summary className="cursor-pointer text-slate-200 mb-2">
-                Raw response (Detections & Qwen JSON)
-              </summary>
-              <pre className="mt-2 whitespace-pre-wrap break-all">
-                {JSON.stringify(report, null, 2)}
-              </pre>
-            </details>
+                {/* High-level summary */}
+                <div className="grid grid-cols-1 gap-3 text-sm">
+                  <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
+                    <p className="text-xs uppercase text-slate-500 mb-1">
+                      Severity
+                    </p>
+                    <p className="text-lg font-semibold">
+                      {report.summary?.severityScore !== undefined
+                        ? `${Math.round(
+                            (report.summary.severityScore ?? 0) * 100
+                          )} / 100`
+                        : "N/A"}
+                    </p>
+                  </div>
+                  <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
+                    <p className="text-xs uppercase text-slate-500 mb-1">
+                      Estimated repair cost
+                    </p>
+                    <p className="text-lg font-semibold">
+                      {report.summary?.estimatedRepairCost !== undefined
+                        ? `$${report.summary.estimatedRepairCost}`
+                        : "N/A"}
+                    </p>
+                  </div>
+                  <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
+                    <p className="text-xs uppercase text-slate-500 mb-1">
+                      Files analyzed
+                    </p>
+                    <p className="text-sm">
+                      <span className="block truncate">
+                        Pickup: {report.pickup?.filename ?? "N/A"}
+                      </span>
+                      <span className="block truncate">
+                        Return: {report.returned?.filename ?? "N/A"}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Qwen description */}
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold text-slate-200">
+                    AI Damage Narrative
+                  </h3>
+                  <p className="text-sm text-slate-300 bg-slate-950/60 border border-slate-800 rounded-xl p-4">
+                    {report.qwen?.description ??
+                      "No description returned by the AI service."}
+                  </p>
+                </div>
+
+                {/* Raw JSON (debug section) */}
+                <details className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 text-xs text-slate-400">
+                  <summary className="cursor-pointer text-slate-200 mb-2">
+                    Raw response (Detections & Qwen JSON)
+                  </summary>
+                  <pre className="mt-2 whitespace-pre-wrap break-all">
+                    {JSON.stringify(report, null, 2)}
+                  </pre>
+                </details>
+              </div>
+            )}
           </section>
         )}
       </div>

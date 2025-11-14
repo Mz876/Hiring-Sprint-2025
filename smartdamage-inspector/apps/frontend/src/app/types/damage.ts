@@ -33,3 +33,15 @@ export type DamageReport = {
     estimatedRepairCost?: number;
   };
 };
+
+// Overlay box used by the UI
+export type BoxOverlay = {
+  id: number;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  label: string;
+  confidence: number;
+  color: string;
+};
