@@ -1,3 +1,4 @@
+const yoloService = require("../services/ai/yolo.service");
 const qwenService = require("../services/ai/qwen.service");
 
 exports.analyzePickupAndReturn = async (req, res) => {
@@ -15,10 +16,13 @@ exports.analyzePickupAndReturn = async (req, res) => {
     const pickupBuffer = pickupFile.buffer;
     const returnBuffer = returnFile.buffer;
 
-    // ❌ REMOVE YOLO — ONLY QWEN NOW
-    const qwenResult = await qwenService.describeDamage(returnBuffer);
+    // Run Roboflow YOLO + Qwen in parallel on the RETURN image
+    const [yoloResult, qwenResult] = await Promise.all([
+      yoloService.detectDamage(returnBuffer),
+      qwenService.describeDamage(returnBuffer),
+    ]);
 
-    // Basic severity / cost logic
+    // Basic severity / cost logic (from Qwen)
     const severityScore =
       typeof qwenResult.severityScore === "number"
         ? qwenResult.severityScore
@@ -33,13 +37,8 @@ exports.analyzePickupAndReturn = async (req, res) => {
       returned: {
         filename: returnFile.originalname,
       },
-
-      // ❌ yolo removed completely
-      yolo: null,
-
-      // ✅ QWEN stays
+      yolo: yoloResult, // <-- Roboflow detections here
       qwen: qwenResult,
-
       summary: {
         severityScore,
         estimatedRepairCost,
@@ -47,7 +46,6 @@ exports.analyzePickupAndReturn = async (req, res) => {
     });
   } catch (err) {
     console.error("Analyze error:", err);
-
     res.status(500).json({
       error: `Analysis failed: ${err.message}`,
       details: err.message || String(err),

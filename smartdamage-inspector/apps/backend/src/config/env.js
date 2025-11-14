@@ -8,6 +8,9 @@ const config = {
   hfApiKey: process.env.HF_API_KEY || "",
   qwenApiUrl: process.env.QWEN_API_URL || "",
   qwenApiKey: process.env.QWEN_API_KEY || "",
+  roboflowApiKey: process.env.ROBOFLOW_API_KEY,
+  roboflowModelId: process.env.ROBOFLOW_MODEL_ID || "car-damage-c1f0i",
+  roboflowModelVersion: process.env.ROBOFLOW_MODEL_VERSION || "1",
 };
 
 module.exports = config;

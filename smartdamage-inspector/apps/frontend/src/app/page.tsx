@@ -1,11 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
+
+type RoboflowPrediction = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  class: string;
+  confidence: number;
+};
+
+type RoboflowImageMeta = {
+  width: number;
+  height: number;
+};
+
+type RoboflowResult = {
+  predictions?: RoboflowPrediction[];
+  image?: RoboflowImageMeta;
+  [key: string]: any;
+};
 
 type DamageReport = {
   pickup?: { filename?: string };
   returned?: { filename?: string };
-  yolo?: any;
+  yolo?: RoboflowResult | null;
   qwen?: {
     description?: string;
     severityScore?: number;
@@ -16,12 +36,14 @@ type DamageReport = {
   };
 };
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
+const BACKEND_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
 
-export default function HomePage(){
-
+export default function HomePage() {
   const [pickupFile, setPickupFile] = useState<File | null>(null);
   const [returnedFile, setReturnedFile] = useState<File | null>(null);
+  const [returnPreviewUrl, setReturnPreviewUrl] = useState<string | null>(null);
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<DamageReport | null>(null);
@@ -37,7 +59,6 @@ export default function HomePage(){
     }
 
     try {
-
       setIsLoading(true);
 
       const formData = new FormData();
@@ -49,28 +70,60 @@ export default function HomePage(){
         body: formData,
       });
 
-      console.log("boboboboob:",res);
-
       if (!res.ok) {
         const errBody = await res.json().catch(() => ({}));
         throw new Error(errBody.error || "Failed to analyze images.");
       }
 
       const data: DamageReport = await res.json();
-
-      console.log("data errro:",data);
-
+      console.log("analyze result:", data);
       setReport(data);
     } catch (err: any) {
-
-      console.log("errororororo:",err);
-
-      console.error(err);
+      console.error("analyze error:", err);
       setError(err.message || "Something went wrong.");
     } finally {
       setIsLoading(false);
     }
   };
+
+  // Convert Roboflow predictions into overlay boxes (in percentages)
+  const yoloBoxes = useMemo(() => {
+    if (!report?.yolo?.predictions || !report.yolo.image) return [];
+    const preds = report.yolo.predictions;
+    const imgMeta = report.yolo.image;
+    const iw = imgMeta.width;
+    const ih = imgMeta.height;
+    if (!iw || !ih) return [];
+
+    return preds.map((p, i) => {
+      // Roboflow x,y are center coords
+      const left = ((p.x - p.width / 2) / iw) * 100;
+      const top = ((p.y - p.height / 2) / ih) * 100;
+      const width = (p.width / iw) * 100;
+      const height = (p.height / ih) * 100;
+
+      // Color by class name: Light / Moderate / Severe
+      const cls = (p.class || "").toLowerCase();
+      let color = "rgba(34,197,94,0.9)"; // green = light
+      if (cls.includes("mod")) {
+        color = "rgba(234,179,8,0.9)"; // yellow = moderate
+      }
+      if (cls.includes("sev")) {
+        color = "rgba(248,113,113,0.9)"; // red = severe
+      }
+
+      return {
+        id: i,
+        left,
+        top,
+        width,
+        height,
+        label: p.class,
+        confidence: p.confidence,
+        color,
+      };
+    });
+  }, [report]);
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4">
@@ -82,8 +135,8 @@ export default function HomePage(){
           </h1>
           <p className="text-slate-400 text-sm md:text-base">
             Upload pickup and return photos of a vehicle. The backend will run
-            YOLO (damage detection) and Qwen (damage description) and return an
-            assessment report.
+            Roboflow (damage detection) and Qwen (damage description) and return
+            an assessment report.
           </p>
         </header>
 
@@ -130,21 +183,63 @@ export default function HomePage(){
                   <input
                     type="file"
                     accept="image/*"
-                    onChange={(e) =>
-                      setReturnedFile(e.target.files?.[0] ?? null)
-                    }
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      setReturnedFile(file);
+                      if (file) {
+                        setReturnPreviewUrl(URL.createObjectURL(file));
+                      } else {
+                        setReturnPreviewUrl(null);
+                      }
+                    }}
                     className="text-sm"
                   />
-                  {returnedFile && (
+
+                  {/* Returned image + damage boxes */}
+                  {returnedFile && returnPreviewUrl && (
                     <div className="w-full text-xs text-slate-400">
                       <p className="truncate">Selected: {returnedFile.name}</p>
                       <div className="mt-2">
-                        <p className="mb-1">Preview:</p>
-                        <img
-                          src={URL.createObjectURL(returnedFile)}
-                          alt="Return preview"
-                          className="w-full h-40 object-cover rounded-lg border border-slate-700"
-                        />
+                        <p className="mb-1">Preview with detected damage:</p>
+                        <div className="relative w-full h-40 border border-slate-700 rounded-lg overflow-hidden bg-black/40">
+                          {/* Image */}
+                          <img
+                            src={returnPreviewUrl}
+                            alt="Return preview"
+                            className="w-full h-full object-cover"
+                          />
+                          {/* Damage boxes from Roboflow */}
+                          {yoloBoxes.map((box) => (
+                            <div
+                              key={box.id}
+                              className="absolute border-2 rounded-sm"
+                              style={{
+                                left: `${box.left}%`,
+                                top: `${box.top}%`,
+                                width: `${box.width}%`,
+                                height: `${box.height}%`,
+                                borderColor: box.color,
+                              }}
+                            >
+                              <div
+                                className="absolute -top-5 left-0 px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-900"
+                                style={{ backgroundColor: box.color }}
+                              >
+                                {box.label}{" "}
+                                {box.confidence !== undefined &&
+                                  `(${(box.confidence * 100).toFixed(0)}%)`}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        {(!report?.yolo?.predictions ||
+                          report.yolo.predictions.length === 0) && (
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            * Boxes will appear here after you click{" "}
+                            <span className="font-semibold">Analyze</span> and
+                            the detection finishes.
+                          </p>
+                        )}
                       </div>
                     </div>
                   )}
@@ -228,7 +323,7 @@ export default function HomePage(){
             {/* Raw JSON (debug section) */}
             <details className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 text-xs text-slate-400">
               <summary className="cursor-pointer text-slate-200 mb-2">
-                Raw response (YOLO & Qwen JSON)
+                Raw response (Detections & Qwen JSON)
               </summary>
               <pre className="mt-2 whitespace-pre-wrap break-all">
                 {JSON.stringify(report, null, 2)}

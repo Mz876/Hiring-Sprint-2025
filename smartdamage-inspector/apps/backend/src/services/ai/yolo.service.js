@@ -1,46 +1,47 @@
+// services/ai/yolo.service.js
 const axios = require("axios");
 const config = require("../../config/env");
 
-const YOLO_MODEL_ID = "nezahatkorkmaz/car-damage-level-detection-yolov8";
-
 async function detectDamage(imageBuffer) {
-  if (!config.hfApiKey) {
-    console.warn("HF_API_KEY not set, returning mock YOLO result.");
+  if (!config.roboflowApiKey) {
+    console.warn("ROBOFLOW_API_KEY not set, returning mock YOLO result.");
     return {
       mock: true,
-      detections: [],
-      note: "Set HF_API_KEY in .env to enable real YOLO calls."
+      predictions: [],
+      note: "Set ROBOFLOW_API_KEY in .env to enable real Roboflow calls.",
     };
   }
 
-  const url = `https://api-inference.huggingface.co/models/${YOLO_MODEL_ID}`;
+  const modelId = config.roboflowModelId;
+  const version = config.roboflowModelVersion;
+  const url = `https://serverless.roboflow.com/${modelId}/${version}`;
+  const imageBase64 = imageBuffer.toString("base64");
 
   try {
-  const response = await axios.post(
-  url,
-  { 
-    inputs: imageBuffer.toString("base64")
-  },
-  {
-    headers: {
-      Authorization: `Bearer ${config.hfApiKey}`,
-      "Content-Type": "application/json"
-    }
-  }
-);
+    const response = await axios({
+      method: "POST",
+      url,
+      params: {
+        api_key: config.roboflowApiKey,
+        confidence: 0.2,  // lower threshold so it’s less picky
+        overlap: 0.3,
+      },
+      data: imageBase64,
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        
+      },
+    });
 
-    console.log("Response:",response);
-
+    // Roboflow returns { predictions: [...] }
     return response.data;
   } catch (err) {
-
-
     console.error(
-      "detectDamage HF error:",
+      "detectDamage Roboflow error:",
       err.response?.status,
       err.response?.data || err.message
     );
-    throw new Error("detectDamage: Hugging Face request failed");
+    throw new Error("detectDamage: Roboflow request failed");
   }
 }
 
