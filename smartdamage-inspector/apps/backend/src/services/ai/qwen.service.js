@@ -1,73 +1,108 @@
+// services/describeDamage.js
 const axios = require("axios");
 const config = require("../../config/env");
 
-// Qwen2-VL vision-language model on Hugging Face
-const QWEN_MODEL_ID = "Qwen/Qwen2-VL-7B-Instruct";
+// AUTO provider (no :hyperbolic suffix)
+const QWEN_MODEL_ID = "Qwen/Qwen2.5-VL-7B-Instruct";
 
 async function describeDamage(imageBuffer) {
+  // If no HF key, return a mock response instead of crashing
   if (!config.hfApiKey) {
     console.warn("HF_API_KEY not set, returning mock Qwen result.");
     return {
-      description:
-        "Mock: possible scratch or dent detected. Severity appears moderate.",
-      severityScore: 0.6
+      description: "Mock: possible scratch or dent detected.",
+      severityScore: 0.5,
+      mock: true
     };
   }
 
-  const url = `https://api-inference.huggingface.co/models/${QWEN_MODEL_ID}`;
-
+  const url = "https://router.huggingface.co/v1/chat/completions";
   const base64 = imageBuffer.toString("base64");
 
   const prompt = `
 You are an expert vehicle damage assessor.
-Describe any visible damage on this vehicle image (scratches, dents, cracks, broken parts).
-Return ONLY a compact JSON with:
-- description (string)
-- severityScore (number between 0 and 1, 1 = most severe)
+You receive a single car image.
+Describe the visible damage (scratches, dents, cracks, broken parts).
+Return ONLY a compact JSON object in this exact shape:
+{
+  "description": string,
+  "severityScore": number  // 0 to 1, 1 = very severe damage
+}
 `;
 
-  // HF vision models often accept JSON like this; adjust as needed based on actual response.
-  const response = await axios.post(
-    url,
-    {
-      inputs: {
-        prompt,
-        // Some HF backends expect "image" as base64-encoded string
-        image: base64
-      }
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${config.hfApiKey}`,
-        "Content-Type": "application/json"
-      },
-      timeout: 60000
-    }
-  );
-
-  const data = response.data;
-
-  // The model may return plain text or JSON-like text; we try to parse JSON from it.
-  const textOutput =
-    (Array.isArray(data) && data[0]?.generated_text) ||
-    data.generated_text ||
-    JSON.stringify(data);
-
-  let parsed;
   try {
-    const match = textOutput.match(/\{[\s\S]*\}/);
-    parsed = match ? JSON.parse(match[0]) : { description: textOutput };
-  } catch (e) {
-    parsed = { description: textOutput };
-  }
+    const response = await axios.post(
+      url,
+      {
+        model: QWEN_MODEL_ID,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: prompt
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  // inline the uploaded image as a data URL
+                  url: `data:image/jpeg;base64,${base64}`
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${config.hfApiKey}`, // HF_TOKEN in your env
+          "Content-Type": "application/json"
+        },
+        timeout: 60000
+      }
+    );
 
-  return {
-    description: parsed.description || textOutput,
-    severityScore:
-      typeof parsed.severityScore === "number" ? parsed.severityScore : 0.5
-  };
+    // ---- Extract text from router-style response ----
+    const choice = response.data?.choices?.[0];
+    const content = choice?.message?.content;
+
+    let textOutput = "";
+
+    if (Array.isArray(content)) {
+      // content is an array of parts: [{ type: "text", text: "..." }, ...]
+      textOutput = content
+        .map((part) => part.text || "")
+        .join("\n")
+        .trim();
+    } else if (typeof content === "string") {
+      textOutput = content;
+    } else {
+      textOutput = JSON.stringify(response.data);
+    }
+
+    // ---- Try to extract JSON { description, severityScore } from the text ----
+    let parsed;
+    try {
+      const match = textOutput.match(/\{[\s\S]*\}/);
+      parsed = match ? JSON.parse(match[0]) : { description: textOutput };
+    } catch (e) {
+      parsed = { description: textOutput };
+    }
+
+    return {
+      description: parsed.description || textOutput,
+      severityScore:
+        typeof parsed.severityScore === "number" ? parsed.severityScore : 0.5
+    };
+  } catch (err) {
+    console.error(
+      "🔥 describeDamage HF router error:",
+      err.response?.status,
+      err.response?.data || err.message
+    );
+    throw new Error("describeDamage: Hugging Face router request failed");
+  }
 }
 
-module.exports = {
-  describeDamage
-};
+module.exports = { describeDamage };

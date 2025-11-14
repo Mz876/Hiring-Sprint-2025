@@ -1,4 +1,3 @@
-const yoloService = require("../services/ai/yolo.service");
 const qwenService = require("../services/ai/qwen.service");
 
 exports.analyzePickupAndReturn = async (req, res) => {
@@ -16,23 +15,16 @@ exports.analyzePickupAndReturn = async (req, res) => {
     const pickupBuffer = pickupFile.buffer;
     const returnBuffer = returnFile.buffer;
 
-    // Run YOLO + Qwen in parallel on the RETURN image
-    const [yoloResult, qwenResult] = await Promise.all([
-      yoloService.detectDamage(returnBuffer),
-      qwenService.describeDamage(returnBuffer),
-    ]);
+    // ❌ REMOVE YOLO — ONLY QWEN NOW
+    const qwenResult = await qwenService.describeDamage(returnBuffer);
 
-    // Basic severity / cost logic (you can tune later)
+    // Basic severity / cost logic
     const severityScore =
       typeof qwenResult.severityScore === "number"
         ? qwenResult.severityScore
         : 0.5;
 
-    const estimatedRepairCost = Math.round(severityScore * 1000); // simple demo formula
-
-    // You could later compare pickupBuffer vs returnBuffer here
-    // (e.g. image similarity or diffing), but for now we just assume
-    // the analysis is based on the return image.
+    const estimatedRepairCost = Math.round(severityScore * 1000);
 
     res.json({
       pickup: {
@@ -41,8 +33,13 @@ exports.analyzePickupAndReturn = async (req, res) => {
       returned: {
         filename: returnFile.originalname,
       },
-      yolo: yoloResult,
+
+      // ❌ yolo removed completely
+      yolo: null,
+
+      // ✅ QWEN stays
       qwen: qwenResult,
+
       summary: {
         severityScore,
         estimatedRepairCost,
@@ -50,8 +47,9 @@ exports.analyzePickupAndReturn = async (req, res) => {
     });
   } catch (err) {
     console.error("Analyze error:", err);
+
     res.status(500).json({
-      error: "Analysis failed",
+      error: `Analysis failed: ${err.message}`,
       details: err.message || String(err),
     });
   }
