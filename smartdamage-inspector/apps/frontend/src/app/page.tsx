@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 
 type RoboflowPrediction = {
   x: number;
@@ -44,11 +44,13 @@ const BACKEND_URL =
  */
 function ImageUploader({
   label,
+  helper,
   files,
   setFiles,
   max = 6,
 }: {
   label: string;
+  helper?: string;
   files: File[];
   setFiles: (f: File[]) => void;
   max?: number;
@@ -73,9 +75,16 @@ function ImageUploader({
 
   return (
     <div className="space-y-3">
-      <label className="block text-sm font-medium text-slate-200">
-        {label} (up to {max})
-      </label>
+      <div className="flex items-center justify-between">
+        <div>
+          <label className="block text-sm font-medium text-slate-200">
+            {label} <span className="text-xs text-slate-500">(max {max})</span>
+          </label>
+          {helper && (
+            <p className="text-[11px] text-slate-500 mt-0.5">{helper}</p>
+          )}
+        </div>
+      </div>
 
       <input
         ref={fileInputRef}
@@ -91,7 +100,7 @@ function ImageUploader({
         {files.map((file, idx) => (
           <div
             key={idx}
-            className="relative rounded-lg border border-slate-700 overflow-hidden"
+            className="relative rounded-lg border border-slate-700 overflow-hidden bg-slate-900/60"
           >
             <img
               src={URL.createObjectURL(file)}
@@ -102,7 +111,7 @@ function ImageUploader({
             <button
               type="button"
               onClick={() => handleRemove(idx)}
-              className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center"
+              className="absolute top-1 right-1 bg-red-600/90 hover:bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center"
             >
               ✕
             </button>
@@ -114,10 +123,10 @@ function ImageUploader({
           <button
             type="button"
             onClick={openFilePicker}
-            className="flex flex-col items-center justify-center rounded-lg border border-slate-700 border-dashed h-28 hover:bg-slate-800 transition"
+            className="flex flex-col items-center justify-center rounded-lg border border-slate-700 border-dashed h-28 hover:bg-slate-800/60 transition"
           >
-            <span className="text-4xl text-slate-400">+</span>
-            <span className="text-xs text-slate-400 mt-1">Add</span>
+            <span className="text-4xl leading-none text-slate-400">+</span>
+            <span className="text-[11px] text-slate-400 mt-1">Add images</span>
           </button>
         )}
       </div>
@@ -133,6 +142,15 @@ export default function HomePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<DamageReport | null>(null);
+
+  // 👇 When all images are cleared, reset report + error + preview
+  useEffect(() => {
+    if (pickupFiles.length === 0 && returnedFiles.length === 0) {
+      setReport(null);
+      setError(null);
+      setReturnPreviewUrl(null);
+    }
+  }, [pickupFiles, returnedFiles]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -225,49 +243,96 @@ export default function HomePage() {
     }
   };
 
+  const handleClearAll = () => {
+    setPickupFiles([]);
+    setReturnedFiles([]);
+    setReport(null);
+    setError(null);
+    setReturnPreviewUrl(null);
+  };
+
+  const analyzeDisabled =
+    isLoading || pickupFiles.length === 0 || returnedFiles.length === 0;
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4">
       <div className="w-full max-w-4xl space-y-8 py-10">
         {/* Header */}
         <header className="space-y-2">
+          <p className="text-xs uppercase tracking-[0.2em] text-emerald-400">
+            Vehicle AI · Damage Assessment
+          </p>
           <h1 className="text-3xl md:text-4xl font-bold">
             SmartDamage Inspector
           </h1>
-          <p className="text-slate-400 text-sm md:text-base">
-            Upload up to 6 pickup and 6 return photos of a vehicle. The backend
-            will run Roboflow (damage detection) and Qwen (damage description)
-            and return an assessment report.
+          <p className="text-slate-400 text-sm md:text-base max-w-2xl">
+            Upload pickup and return photos of a vehicle. We automatically
+            detect visible damages, estimate severity, and suggest a repair
+            cost.
           </p>
         </header>
 
         {/* Form */}
-        <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 shadow-lg">
+        <section className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 shadow-lg space-y-4">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-100">
+                New inspection
+              </h2>
+              <p className="text-xs text-slate-500">
+                Step 1: Upload photos · Step 2: Run AI analysis
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleClearAll}
+              className="text-xs px-3 py-1.5 rounded-full border border-slate-700 text-slate-300 hover:bg-slate-800/80 transition"
+            >
+              Clear all
+            </button>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid md:grid-cols-2 gap-6">
               {/* Pickup images */}
-              <ImageUploader
-                label="Pickup images (before)"
-                files={pickupFiles}
-                setFiles={setPickupFiles}
-                max={6}
-              />
+              <div className="space-y-2">
+                <p className="text-[11px] uppercase text-slate-500 tracking-wide">
+                  Step 1 · Pickup (before)
+                </p>
+                <ImageUploader
+                  label="Pickup images"
+                  helper="Capture the vehicle condition at pickup: front, rear, sides."
+                  files={pickupFiles}
+                  setFiles={setPickupFiles}
+                  max={6}
+                />
+              </div>
 
               {/* Returned images */}
               <div className="space-y-4">
-                <ImageUploader
-                  label="Return images (after)"
-                  files={returnedFiles}
-                  setFiles={(files) => {
-                    setReturnedFiles(files);
-                    syncReturnPreview(files);
-                  }}
-                  max={6}
-                />
+                <div className="space-y-2">
+                  <p className="text-[11px] uppercase text-slate-500 tracking-wide">
+                    Step 2 · Return (after)
+                  </p>
+                  <ImageUploader
+                    label="Return images"
+                    helper="Capture the vehicle condition at return from similar angles."
+                    files={returnedFiles}
+                    setFiles={(files) => {
+                      setReturnedFiles(files);
+                      syncReturnPreview(files);
+                    }}
+                    max={6}
+                  />
+                </div>
 
                 {/* Preview with YOLO boxes on first return image */}
                 {returnedFiles.length > 0 && returnPreviewUrl && (
                   <div className="w-full text-xs text-slate-400 space-y-2">
-                    <p>Preview with detected damage (first return image):</p>
+                    <p className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      Preview with detected damage (first return image)
+                    </p>
                     <div className="relative w-full h-40 border border-slate-700 rounded-lg overflow-hidden bg-black/40">
                       <img
                         src={returnPreviewUrl}
@@ -287,7 +352,7 @@ export default function HomePage() {
                           }}
                         >
                           <div
-                            className="absolute -top-5 left-0 px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-900"
+                            className="absolute -top-5 left-0 px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-900 shadow-sm"
                             style={{ backgroundColor: box.color }}
                           >
                             {box.label}{" "}
@@ -301,8 +366,10 @@ export default function HomePage() {
                       report.yolo.predictions.length === 0) && (
                       <p className="mt-1 text-[11px] text-slate-500">
                         * Boxes will appear here after you click{" "}
-                        <span className="font-semibold">Analyze</span> and the
-                        detection finishes.
+                        <span className="font-semibold text-slate-300">
+                          Analyze Damage
+                        </span>
+                        .
                       </p>
                     )}
                   </div>
@@ -318,13 +385,19 @@ export default function HomePage() {
             )}
 
             {/* Submit */}
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="inline-flex items-center justify-center px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-70 disabled:cursor-not-allowed text-sm font-medium text-slate-950 transition"
-            >
-              {isLoading ? "Analyzing..." : "Analyze Damage"}
-            </button>
+            <div className="flex items-center justify-between gap-4">
+              <button
+                type="submit"
+                disabled={analyzeDisabled}
+                className="inline-flex items-center justify-center px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 disabled:cursor-not-allowed text-sm font-medium text-slate-950 transition"
+              >
+                {isLoading ? "Analyzing..." : "Analyze Damage"}
+              </button>
+              <p className="text-[11px] text-slate-500">
+                We don’t store your images. Analysis runs in real time on each
+                upload.
+              </p>
+            </div>
           </form>
         </section>
 
@@ -375,7 +448,7 @@ export default function HomePage() {
             {/* Qwen description */}
             <div className="space-y-2">
               <h3 className="text-sm font-semibold text-slate-200">
-                AI Damage Description (Qwen)
+                AI Damage Narrative
               </h3>
               <p className="text-sm text-slate-300 bg-slate-950/60 border border-slate-800 rounded-xl p-4">
                 {report.qwen?.description ??
