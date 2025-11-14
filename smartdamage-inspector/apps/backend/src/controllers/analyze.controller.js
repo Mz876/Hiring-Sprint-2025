@@ -3,45 +3,81 @@ const qwenService = require("../services/ai/qwen.service");
 
 exports.analyzePickupAndReturn = async (req, res) => {
   try {
-    const pickupFile = req.files?.pickup?.[0];
-    const returnFile = req.files?.returned?.[0];
+    const pickupFiles = req.files?.pickup || [];
+    const returnFiles = req.files?.returned || [];
 
     // Validate input
-    if (!pickupFile || !returnFile) {
+    if (!pickupFiles.length || !returnFiles.length) {
       return res.status(400).json({
-        error: "Both 'pickup' and 'returned' images are required.",
+        error: "At least one 'pickup' and one 'returned' image are required.",
       });
     }
 
-    const pickupBuffer = pickupFile.buffer;
-    const returnBuffer = returnFile.buffer;
+    if (pickupFiles.length > 6 || returnFiles.length > 6) {
+      return res.status(400).json({
+        error: "You can upload a maximum of 6 pickup and 6 returned images.",
+      });
+    }
 
-    // Run Roboflow YOLO + Qwen in parallel on the RETURN image
-    const [yoloResult, qwenResult] = await Promise.all([
-      yoloService.detectDamage(returnBuffer),
-      qwenService.describeDamage(returnBuffer),
-    ]);
+    // --- Run YOLO + Qwen on ALL returned images ---
+    const returnedAnalyses = await Promise.all(
+      returnFiles.map(async (file, index) => {
+        const buffer = file.buffer;
 
-    // Basic severity / cost logic (from Qwen)
-    const severityScore =
-      typeof qwenResult.severityScore === "number"
-        ? qwenResult.severityScore
-        : 0.5;
+        const [yoloResult, qwenResult] = await Promise.all([
+          yoloService.detectDamage(buffer),
+          qwenService.describeDamage(buffer),
+        ]);
 
-    const estimatedRepairCost = Math.round(severityScore * 1000);
+        const severityScore =
+          typeof qwenResult.severityScore === "number"
+            ? qwenResult.severityScore
+            : 0.5;
+
+        return {
+          index,
+          filename: file.originalname,
+          yolo: yoloResult,
+          qwen: qwenResult,
+          severityScore,
+        };
+      })
+    );
+
+    // Pick the "worst" returned image by severity
+    const worst =
+      returnedAnalyses.length > 0
+        ? returnedAnalyses.reduce((max, curr) =>
+            curr.severityScore > max.severityScore ? curr : max
+          )
+        : null;
+
+    const overallSeverity = worst ? worst.severityScore : 0.5;
+    const estimatedRepairCost = Math.round(overallSeverity * 1000);
+
+    const pickupNames = pickupFiles.map((f) => f.originalname);
+    const returnNames = returnFiles.map((f) => f.originalname);
 
     res.json({
       pickup: {
-        filename: pickupFile.originalname,
+        filenames: pickupNames,
       },
       returned: {
-        filename: returnFile.originalname,
+        filenames: returnNames,
       },
-      yolo: yoloResult, // <-- Roboflow detections here
-      qwen: qwenResult,
+
+      // Per-image analysis for ALL returned images
+      returnedAnalyses,
+
+      // For backward compatibility / easy UI: also expose the worst image's analysis
+      yolo: worst ? worst.yolo : null,
+      qwen: worst ? worst.qwen : null,
+
       summary: {
-        severityScore,
+        severityScore: overallSeverity,
         estimatedRepairCost,
+        worstImageIndex: worst ? worst.index : null,
+        worstImageFilename: worst ? worst.filename : null,
       },
     });
   } catch (err) {
