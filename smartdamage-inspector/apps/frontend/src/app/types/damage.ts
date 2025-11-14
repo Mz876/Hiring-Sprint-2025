@@ -20,18 +20,41 @@ export type RoboflowResult = {
   [key: string]: any;
 };
 
-export type DamageReport = {
-  pickup?: { filename?: string };
-  returned?: { filename?: string };
+export type ReturnedImageAnalysis = {
+  index: number;
+  filename: string;
   yolo?: RoboflowResult | null;
   qwen?: {
     description?: string;
     severityScore?: number;
   };
-  summary?: {
-    severityScore?: number;
-    estimatedRepairCost?: number;
+  severityScore?: number;
+};
+
+export type DamageSummary = {
+  severityScore: number;
+  estimatedRepairCost: number;
+  worstImageIndex?: number;
+  worstImageFilename?: string;
+};
+
+export type DamageReport = {
+  pickup?: {
+    filenames: string[];
   };
+  returned?: {
+    filenames: string[];
+  };
+  // Per-return-image analyses (what we want for the preview)
+  returnedAnalyses?: ReturnedImageAnalysis[];
+
+  // Optional “worst image” aggregate (like in your JSON)
+  yolo?: RoboflowResult | null;
+  qwen?: {
+    description?: string;
+    severityScore?: number;
+  };
+  summary?: DamageSummary;
 };
 
 // Overlay box used by the UI

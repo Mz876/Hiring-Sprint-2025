@@ -2,18 +2,16 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { ImageUploader } from "@/app/components/ImageUploader";
-import { ReturnThumbnails } from "./components/ReturnThumbnails";
-import { DamagePreview } from "./components/DamagePreview";
+import { ReturnThumbnails } from "@/app/components/ReturnThumbnails";
+import { DamagePreview } from "@/app/components/DamagePreview";
 import { analyzeDamage } from "@/app/lib/api/analyzeDamage";
-import type { DamageReport, BoxOverlay } from "@/app/types/damage";
+import type { DamageReport, BoxOverlay, ReturnedImageAnalysis } from "@/app/types/damage";
 
 export default function HomePage() {
   const [pickupFiles, setPickupFiles] = useState<File[]>([]);
   const [returnedFiles, setReturnedFiles] = useState<File[]>([]);
   const [activeReturnIndex, setActiveReturnIndex] = useState(0);
-  const [activeReturnPreviewUrl, setActiveReturnPreviewUrl] = useState<
-    string | null
-  >(null);
+  const [activeReturnPreviewUrl, setActiveReturnPreviewUrl] = useState<string | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,11 +79,18 @@ export default function HomePage() {
     }
   };
 
-  // YOLO overlays
+  // Helper: get current analysis object for the active index
+  const currentAnalysis: ReturnedImageAnalysis | undefined =
+    report?.returnedAnalyses?.[activeReturnIndex];
+
+  // YOLO overlays – NOW PER IMAGE 🧨
   const yoloBoxes: BoxOverlay[] = useMemo(() => {
-    if (!report?.yolo?.predictions || !report.yolo.image) return [];
-    const preds = report.yolo.predictions;
-    const imgMeta = report.yolo.image;
+    if (!currentAnalysis?.yolo?.predictions || !currentAnalysis.yolo.image) {
+      return [];
+    }
+
+    const preds = currentAnalysis.yolo.predictions;
+    const imgMeta = currentAnalysis.yolo.image;
     const iw = imgMeta.width;
     const ih = imgMeta.height;
     if (!iw || !ih) return [];
@@ -112,7 +117,7 @@ export default function HomePage() {
         color,
       };
     });
-  }, [report]);
+  }, [currentAnalysis]);
 
   const handleClearAll = () => {
     setPickupFiles([]);
@@ -128,11 +133,18 @@ export default function HomePage() {
 
   const activeReturnLabel =
     returnedFiles.length > 0
-      ? `Return ${activeReturnIndex + 1} of ${returnedFiles.length}`
+      ? `Return ${activeReturnIndex + 1} of ${returnedFiles.length}${
+          currentAnalysis?.filename ? ` · ${currentAnalysis.filename}` : ""
+        }`
       : "No return image selected";
 
   const hasDetections =
-    !!report?.yolo?.predictions && report.yolo.predictions.length > 0;
+    !!currentAnalysis?.yolo?.predictions &&
+    currentAnalysis.yolo.predictions.length > 0;
+
+  // Choose per-image Qwen description if available, otherwise fall back to global
+  const activeDescription =
+    currentAnalysis?.qwen?.description ?? report?.qwen?.description;
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4">
@@ -253,11 +265,11 @@ export default function HomePage() {
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg space-y-6">
                 <h2 className="text-lg font-semibold">Inspection Report</h2>
 
-                {/* High-level summary */}
+                {/* High-level summary (worst image) */}
                 <div className="grid grid-cols-1 gap-3 text-sm">
                   <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
                     <p className="text-xs uppercase text-slate-500 mb-1">
-                      Severity
+                      Severity (worst image)
                     </p>
                     <p className="text-lg font-semibold">
                       {report.summary?.severityScore !== undefined
@@ -266,6 +278,11 @@ export default function HomePage() {
                           )} / 100`
                         : "N/A"}
                     </p>
+                    {report.summary?.worstImageFilename && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        Worst: {report.summary.worstImageFilename}
+                      </p>
+                    )}
                   </div>
                   <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
                     <p className="text-xs uppercase text-slate-500 mb-1">
@@ -282,24 +299,30 @@ export default function HomePage() {
                       Files analyzed
                     </p>
                     <p className="text-sm">
-                      <span className="block truncate">
-                        Pickup: {report.pickup?.filename ?? "N/A"}
+                      <span className="block">
+                        Pickup:{" "}
+                        {report.pickup?.filenames
+                          ? report.pickup.filenames.join(", ")
+                          : "N/A"}
                       </span>
-                      <span className="block truncate">
-                        Return: {report.returned?.filename ?? "N/A"}
+                      <span className="block">
+                        Return:{" "}
+                        {report.returned?.filenames
+                          ? report.returned.filenames.join(", ")
+                          : "N/A"}
                       </span>
                     </p>
                   </div>
                 </div>
 
-                {/* Qwen description */}
+                {/* Qwen description (per active image) */}
                 <div className="space-y-2">
                   <h3 className="text-sm font-semibold text-slate-200">
-                    AI Damage Narrative
+                    AI Damage Narrative (selected image)
                   </h3>
                   <p className="text-sm text-slate-300 bg-slate-950/60 border border-slate-800 rounded-xl p-4">
-                    {report.qwen?.description ??
-                      "No description returned by the AI service."}
+                    {activeDescription ??
+                      "No description returned by the AI service for this image."}
                   </p>
                 </div>
 
