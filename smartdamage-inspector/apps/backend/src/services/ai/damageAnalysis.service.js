@@ -143,6 +143,10 @@ function matchPickupAndReturn(pickupAnalyses, returnedAnalyses) {
 function comparePickupAndReturn(pickupAnalyses, returnedAnalyses, pairings) {
   const iouThreshold = 0.3;
 
+  // (A) confidence thresholds – tweak as you like
+  const PICKUP_CONF_THRESHOLD = 0.6; // how sure we must be it existed at pickup
+  const RETURN_CONF_THRESHOLD = 0.4; // how sure we must be it's real in return
+
   const perImage = [];
   const allNewDamages = [];
   const allPreExistingDamages = [];
@@ -164,9 +168,12 @@ function comparePickupAndReturn(pickupAnalyses, returnedAnalyses, pairings) {
 
     rBoxes.forEach((rBox) => {
       const rClass = (rBox.class || "").toLowerCase();
+      const rConf =
+        typeof rBox.confidence === "number" ? rBox.confidence : 0;
 
       let bestIoU = 0;
       let bestPickupBox = null;
+      let bestPickupConf = 0;
 
       pBoxes.forEach((pBox) => {
         const pClass = (pBox.class || "").toLowerCase();
@@ -176,14 +183,22 @@ function comparePickupAndReturn(pickupAnalyses, returnedAnalyses, pairings) {
         if (overlap > bestIoU) {
           bestIoU = overlap;
           bestPickupBox = pBox;
+          bestPickupConf =
+            typeof pBox.confidence === "number" ? pBox.confidence : 0;
         }
       });
 
-      if (bestPickupBox && bestIoU >= iouThreshold) {
+      const isConfidentMatch =
+        bestPickupBox &&
+        bestIoU >= iouThreshold &&
+        bestPickupConf >= PICKUP_CONF_THRESHOLD &&
+        rConf >= RETURN_CONF_THRESHOLD;
+
+      if (isConfidentMatch) {
         const item = {
           class: rBox.class,
-          confidenceReturn: rBox.confidence,
-          confidencePickup: bestPickupBox.confidence,
+          confidenceReturn: rConf,
+          confidencePickup: bestPickupConf,
           pickupImageIndex: pickup ? pickup.index : null,
           pickupFilename: pickup ? pickup.filename : null,
           returnImageIndex: ret.index,
@@ -195,7 +210,7 @@ function comparePickupAndReturn(pickupAnalyses, returnedAnalyses, pairings) {
       } else {
         const item = {
           class: rBox.class,
-          confidenceReturn: rBox.confidence,
+          confidenceReturn: rConf,
           returnImageIndex: ret.index,
           returnFilename: ret.filename,
         };

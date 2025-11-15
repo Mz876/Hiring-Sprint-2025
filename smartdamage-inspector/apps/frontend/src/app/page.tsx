@@ -384,7 +384,7 @@ export default function HomePage() {
                       {activeDescription ??
                         "No description returned by the AI service for this image."}
                     </p>
- 
+
                   </div>
                 </div>
               )
