@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import { motion } from "framer-motion";
 import { ImageUploader } from "@/app/components/ImageUploader";
 import { ReturnThumbnails } from "@/app/components/ReturnThumbnails";
 import { DamagePreview } from "@/app/components/DamagePreview";
@@ -250,13 +251,25 @@ export default function HomePage() {
 
             {/* Submit */}
             <div className="flex items-center justify-between gap-4">
-              <button
+              <motion.button
                 type="submit"
                 disabled={analyzeDisabled}
-                className="inline-flex items-center justify-center px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 disabled:cursor-not-allowed text-sm font-medium text-slate-950 transition"
+                className="inline-flex items-center justify-center px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 disabled:cursor-not-allowed text-sm font-medium text-slate-950"
+                whileHover={
+                  analyzeDisabled
+                    ? undefined
+                    : { scale: 1.03, translateY: -1 }
+                }
+                whileTap={
+                  analyzeDisabled
+                    ? undefined
+                    : { scale: 0.97, translateY: 0 }
+                }
+                transition={{ type: "spring", stiffness: 260, damping: 18 }}
               >
                 {isLoading ? "Analyzing..." : "Analyze Damage"}
-              </button>
+              </motion.button>
+
               <p className="text-[11px] text-slate-500">
                 We don’t store your images. Analysis runs in real time on each
                 upload.
@@ -309,50 +322,24 @@ export default function HomePage() {
                       )}
                     </div>
 
-                   {report?.summary && (
-  <div className="grid grid-cols-1 gap-3 text-sm">
-    <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
-      <p className="text-xs uppercase text-slate-500 mb-1">
-        Worst single view
-      </p>
-      <p className="text-lg font-semibold">
-        {Math.round(report.summary.maxSeverity * 100)} / 100
-      </p>
-      {report.summary.worstImageFilename && (
-        <p className="text-xs text-slate-500 mt-1">
-          Worst: {report.summary.worstImageFilename}
-        </p>
-      )}
-    </div>
-
-    <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
-      <p className="text-xs uppercase text-slate-500 mb-1">
-        Overall damage (all images)
-      </p>
-      <p className="text-xs text-slate-400">
-        Total severity:{" "}
-        <span className="font-semibold text-slate-200">
-          {report.summary.totalSeverity.toFixed(2)}
-        </span>
-        <br />
-        Avg severity per view:{" "}
-        <span className="font-semibold text-slate-200">
-          {report.summary.avgSeverity.toFixed(2)}
-        </span>
-      </p>
-    </div>
-
-    <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
-      <p className="text-xs uppercase text-slate-500 mb-1">
-        Estimated repair cost
-      </p>
-      <p className="text-lg font-semibold">
-        ${report.summary.estimatedRepairCost}
-      </p>
-    </div>
-  </div>
+                    {report?.summary && (
+                      <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
+                        <p className="text-xs uppercase text-slate-500 mb-1">
+                          Overall damage (all images)
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          Total severity:{" "}
+                          <span className="font-semibold text-slate-200">
+                            {report.summary.totalSeverity.toFixed(2)}
+                          </span>
+                          <br />
+                          Avg severity per view:{" "}
+                          <span className="font-semibold text-slate-200">
+                            {report.summary.avgSeverity.toFixed(2)}
+                          </span>
+                        </p>                     
+                      </div>
                     )}
-
 
                     <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
                       <p className="text-xs uppercase text-slate-500 mb-1">
@@ -397,6 +384,7 @@ export default function HomePage() {
                       {activeDescription ??
                         "No description returned by the AI service for this image."}
                     </p>
+ 
                   </div>
                 </div>
               )
