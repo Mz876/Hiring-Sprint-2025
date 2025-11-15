@@ -35,6 +35,7 @@ export function DamagePreview({
         )}
       </div>
 
+      {/* Image + box overlays */}
       <div className="relative w-full h-64 border border-slate-800 rounded-xl overflow-hidden bg-black/40 flex items-center justify-center">
         {imageUrl ? (
           <>
@@ -43,6 +44,8 @@ export function DamagePreview({
               alt={label}
               className="w-full h-full object-cover"
             />
+
+            {/* Draw only the boxes, without labels on top of the image */}
             {boxes.map((box) => (
               <div
                 key={box.id}
@@ -54,16 +57,7 @@ export function DamagePreview({
                   height: `${box.height}%`,
                   borderColor: box.color,
                 }}
-              >
-                <div
-                  className="absolute -top-5 left-0 px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-900 shadow-sm"
-                  style={{ backgroundColor: box.color }}
-                >
-                  {box.label}{" "}
-                  {box.confidence !== undefined &&
-                    `(${(box.confidence * 100).toFixed(0)}%)`}
-                </div>
-              </div>
+              />
             ))}
           </>
         ) : (
@@ -73,10 +67,34 @@ export function DamagePreview({
         )}
       </div>
 
-      {/* Mini legend for new vs pre-existing if we have comparison */}
+      {/* Legend: one line per box so text never overlaps */}
+      {boxes.length > 0 && (
+        <div className="text-[11px] text-slate-300 space-y-1">
+          <p className="font-semibold text-slate-200">Detections (this image)</p>
+          <ul className="space-y-0.5">
+            {boxes.map((box) => (
+              <li key={box.id} className="flex items-center gap-2">
+                <span
+                  className="inline-block w-3 h-3 rounded-full"
+                  style={{ backgroundColor: box.color }}
+                />
+                <span>
+                  {box.label || "damage"}
+                  {box.confidence !== undefined &&
+                    ` · ${(box.confidence * 100).toFixed(0)}%`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* New vs pre-existing mini summary */}
       {comparisonForImage && (
         <div className="text-[11px] text-slate-400 space-y-1">
-          <p className="font-semibold text-slate-300">Damage summary (this image)</p>
+          <p className="font-semibold text-slate-300">
+            Damage summary (this image)
+          </p>
           <p>
             New damage:{" "}
             <span className="text-rose-400 font-medium">
