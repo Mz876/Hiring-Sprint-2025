@@ -5,12 +5,10 @@ const analyzeController = require("../controllers/analyze.controller");
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-/**
- * POST /api/analyze
- * form-data:
- *  - pickup: up to 6 images
- *  - returned: up to 6 images
- */
+// POST /api/analyze
+// form-data:
+//  - pickup: up to 6 images
+//  - returned: up to 6 images
 router.post(
   "/",
   upload.fields([

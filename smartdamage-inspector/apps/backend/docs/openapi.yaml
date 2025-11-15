@@ -1,0 +1,280 @@
+openapi: 3.0.0
+info:
+  title: Vehicle Damage Assessment API
+  version: 1.0.0
+  description: >
+    API for analyzing pickup and return vehicle images to detect new damages,
+    estimate severity, and approximate repair costs.
+
+servers:
+  - url: http://localhost:4000
+    description: Local development
+
+paths:
+  /api/analyze:
+    post:
+      summary: Analyze pickup and return vehicle images
+      description: >
+        Upload pickup and return vehicle images. The API runs object detection
+        (YOLO) and language analysis (Qwen) on each image, matches pickup vs.
+        return images, detects new vs. pre-existing damages, and computes a
+        severity / cost summary.
+      tags:
+        - Analysis
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                pickup:
+                  type: array
+                  description: Images taken at vehicle pickup (max 6)
+                  items:
+                    type: string
+                    format: binary
+                returned:
+                  type: array
+                  description: Images taken at vehicle return (max 6)
+                  items:
+                    type: string
+                    format: binary
+              required:
+                - pickup
+                - returned
+      responses:
+        '200':
+          description: Successful damage analysis and comparison
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DamageReport'
+        '400':
+          description: Bad request (missing or invalid images)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: At least one 'pickup' and one 'returned' image are required.
+        '500':
+          description: Internal server error during image analysis
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Analysis failed: upstream model error
+                  details:
+                    type: string
+
+components:
+  schemas:
+    YoloPrediction:
+      type: object
+      properties:
+        x:
+          type: number
+        y:
+          type: number
+        width:
+          type: number
+        height:
+          type: number
+        confidence:
+          type: number
+        class:
+          type: string
+          example: damaged
+        class_id:
+          type: integer
+        detection_id:
+          type: string
+
+    YoloResult:
+      type: object
+      properties:
+        inference_id:
+          type: string
+        time:
+          type: number
+          description: Inference time in seconds
+        image:
+          type: object
+          properties:
+            width:
+              type: integer
+            height:
+              type: integer
+        predictions:
+          type: array
+          items:
+            $ref: '#/components/schemas/YoloPrediction'
+
+    QwenResult:
+      type: object
+      properties:
+        description:
+          type: string
+          example: >
+            The rear bumper of the car is severely damaged with large dents
+            and scratches.
+        severityScore:
+          type: number
+          description: Severity score in [0,1]
+
+    ImageAnalysis:
+      type: object
+      properties:
+        index:
+          type: integer
+          example: 0
+        filename:
+          type: string
+          example: back.jpg
+        hash:
+          type: string
+          description: MD5 hash of the image bytes
+        yolo:
+          $ref: '#/components/schemas/YoloResult'
+        qwen:
+          $ref: '#/components/schemas/QwenResult'
+        severityScore:
+          type: number
+          description: Combined severity score for this image
+          example: 0.9
+
+    PickupGroup:
+      type: object
+      properties:
+        filenames:
+          type: array
+          items:
+            type: string
+        analyses:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImageAnalysis'
+
+    ReturnGroup:
+      type: object
+      properties:
+        filenames:
+          type: array
+          items:
+            type: string
+        analyses:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImageAnalysis'
+
+    PerImageComparison:
+      type: object
+      properties:
+        returnImageIndex:
+          type: integer
+        returnFilename:
+          type: string
+        pairedPickupIndex:
+          type: integer
+          nullable: true
+        pairedPickupFilename:
+          type: string
+          nullable: true
+        newDamages:
+          type: array
+          items:
+            type: object
+            properties:
+              class:
+                type: string
+                example: damaged
+              confidenceReturn:
+                type: number
+              returnImageIndex:
+                type: integer
+              returnFilename:
+                type: string
+        preExistingDamages:
+          type: array
+          items:
+            type: object
+        returnSeverity:
+          type: number
+        pickupSeverity:
+          type: number
+          nullable: true
+
+    Comparison:
+      type: object
+      properties:
+        perImage:
+          type: array
+          items:
+            $ref: '#/components/schemas/PerImageComparison'
+        newDamages:
+          type: array
+          items:
+            type: object
+            properties:
+              class:
+                type: string
+              confidenceReturn:
+                type: number
+              returnImageIndex:
+                type: integer
+              returnFilename:
+                type: string
+        preExistingDamages:
+          type: array
+          items:
+            type: object
+
+    Summary:
+      type: object
+      properties:
+        maxSeverity:
+          type: number
+          example: 0.9
+        avgSeverity:
+          type: number
+        totalSeverity:
+          type: number
+        severityScore:
+          type: number
+          description: Alias for maxSeverity (for backwards compatibility)
+        estimatedRepairCost:
+          type: number
+          example: 1425
+        worstImageIndex:
+          type: integer
+          nullable: true
+        worstImageFilename:
+          type: string
+          nullable: true
+
+    DamageReport:
+      type: object
+      description: Full damage analysis & comparison between pickup and return images.
+      properties:
+        pickup:
+          $ref: '#/components/schemas/PickupGroup'
+        returned:
+          $ref: '#/components/schemas/ReturnGroup'
+        returnedAnalyses:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImageAnalysis'
+        comparison:
+          $ref: '#/components/schemas/Comparison'
+        yolo:
+          $ref: '#/components/schemas/YoloResult'
+        qwen:
+          $ref: '#/components/schemas/QwenResult'
+        summary:
+          $ref: '#/components/schemas/Summary'
