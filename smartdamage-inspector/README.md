@@ -11,7 +11,7 @@ SmartDamage Inspector is a full-stack web application that automates vehicle con
 ## 📌 Features
 
 ### 🔍 Damage Detection
-- **YOLO model** detects dents, scratches, broken parts, and severity levels
+- **Roboflow YOLO model** detects dents, scratches, broken parts, and severity levels
 - **Bounding box overlays** drawn dynamically on images
 - **Confidence scoring** for each detection
 
@@ -20,9 +20,10 @@ SmartDamage Inspector is a full-stack web application that automates vehicle con
 - Distinguishes **new vs pre-existing damages**
 - Per-image comparison summary
 
-### 🧠 AI Narrative (LLM)
-- Generates natural language descriptions of detected damage
+### 🧠 AI Narrative (Qwen Vision-Language Model)
+- **Qwen2.5-VL-7B-Instruct** generates natural language descriptions of detected damage
 - Summarizes severity and affected components
+- Vision-language understanding for context-aware analysis
 
 ### 💰 Cost Estimation
 Calculates:
@@ -41,13 +42,13 @@ Calculates:
 
 ---
 
-## 🔗 Live URLs
+## 🔗 URLs
 
-| Service | URL |
-|---------|-----|
-| Frontend (Next.js) | TBD |
-| Backend (Express API) | TBD |
-| Swagger API Docs | TBD |
+| Service | Development | Production |
+|---------|-------------|------------|
+| Frontend (Next.js) | http://localhost:3000 | Deployed on Vercel |
+| Backend (Express API) | http://localhost:4000 | TBD |
+| Swagger API Docs | http://localhost:4000/api-docs | TBD |
 
 ---
 
@@ -63,10 +64,12 @@ Calculates:
 ### Backend
 - **Node.js** + **Express**
 - **Multer** for file uploads
-- **YOLO** detection API
-- **Qwen LLM** API for damage descriptions
+- **Roboflow YOLO** API for damage detection
+- **Qwen2.5-VL-7B-Instruct** (Qwen Vision-Language Model v2) for AI-generated damage descriptions
 - Custom comparison + scoring engine
 - **OpenAPI** (Swagger UI) documentation
+- **Axios** for HTTP requests
+- **CORS** enabled
 
 ---
 
@@ -76,20 +79,32 @@ Calculates:
 smartdamage-inspector/
 └── apps/
     ├── backend/
-    │   ├── src/
-    │   │   ├── routes/
-    │   │   ├── controllers/
-    │   │   ├── utils/
-    │   │   └── app.js
     │   ├── docs/
     │   │   └── openapi.yaml
+    │   ├── node_modules/
+    │   ├── src/
+    │   │   ├── config/
+    │   │   ├── controllers/
+    │   │   ├── routes/
+    │   │   ├── services/
+    │   │   ├── app.js
+    │   │   └── server.js
+    │   ├── .env
+    │   ├── swagger.js
     │   └── package.json
     │
     └── frontend/
-        ├── app/
-        ├── components/
-        ├── lib/
-        └── package.json
+        ├── node_modules/
+        ├── src/
+        │   └── app/
+        │       ├── components/
+        │       ├── lib/
+        │       │   └── api/
+        │       ├── types/
+        │       ├── page.tsx
+        │       └── page.test.tsx
+        ├── package.json
+        └── next.config.js
 ```
 
 ---
@@ -99,8 +114,8 @@ smartdamage-inspector/
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/yourusername/smartdamage-inspector
-cd smartdamage-inspector/apps
+git clone https://github.com/Mz876/Hiring-Sprint-2025.git
+cd Hiring-Sprint-2025/apps
 ```
 
 ### 🚀 Backend Setup
@@ -115,8 +130,17 @@ cp .env.example .env
 
 ```env
 PORT=4000
-YOLO_API_KEY=your_key_here
-LLM_API_KEY=your_key_here
+NODE_ENV=development
+
+# Hugging Face API (for Qwen model)
+HF_API_KEY=your_huggingface_api_key_here
+QWEN_API_URL=your_qwen_api_url_here
+QWEN_API_KEY=your_qwen_api_key_here
+
+# Roboflow YOLO Detection
+ROBOFLOW_API_KEY=your_roboflow_key_here
+ROBOFLOW_MODEL_ID=car-damage-c1f0i
+ROBOFLOW_MODEL_VERSION=1
 ```
 
 #### Run Backend
@@ -205,11 +229,15 @@ Accessible at: `/api-docs`
 
 ## ⚠️ Known Limitations (Prototype)
 
-- YOLO detections depend on off-the-shelf model accuracy
+- **Roboflow YOLO** detections depend on off-the-shelf model accuracy
+- **Current model optimized for exterior damage only** - interior detection accuracy is limited
+- **Qwen2.5-VL-7B** descriptions depend on vision-language model capabilities
 - Not optimized for extreme angles or night photos
 - No image storage (in-memory only)
 - Image pairing uses perceptual hashing (not perfect)
-- Repair cost model is heuristic
+- Repair cost model is heuristic and not region-specific
+- No vehicle-specific pricing based on make, model, or year
+- Generic cost estimates without real market data integration
 
 ---
 
@@ -221,12 +249,10 @@ Accessible at: `/api-docs`
 - [ ] Higher accuracy pickup-return matching
 - [ ] More detailed severity & cost model
 - [ ] Offline mobile version with Expo
+- [ ] CI/CD pipeline
+- [ ] Automated testing suite
 
 ---
-
-## 🤝 Contributing
-
-Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](your-issues-url).
 
 ---
 
