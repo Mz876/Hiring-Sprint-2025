@@ -47,8 +47,8 @@ Calculates:
 | Service | Development | Production |
 |---------|-------------|------------|
 | Frontend (Next.js) | http://localhost:3000 | Deployed on Vercel |
-| Backend (Express API) | http://localhost:4000 | TBD |
-| Swagger API Docs | http://localhost:4000/api-docs | TBD |
+| Backend (Express API) | http://localhost:4000 | Deployed on Render |
+| Swagger API Docs | http://localhost:4000/api-docs | [Backend URL]/api-docs |
 
 ---
 
