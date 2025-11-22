@@ -1,134 +1,147 @@
 
-export type RoboflowPrediction = {
+// app/types/damage.ts
+
+// YOLO-style prediction
+export interface YoloPrediction {
   x: number;
   y: number;
   width: number;
   height: number;
-  class: string;
   confidence: number;
-  [key: string]: any;
-};
+  class: string;
+  class_id: number;
+  detection_id?: string;
+}
 
-export type RoboflowImageMeta = {
-  width: number;
-  height: number;
-};
+export interface YoloResult {
+  time?: number;
+  image?: {
+    width: number;
+    height: number;
+  };
+  predictions: YoloPrediction[];
+}
 
-export type RoboflowResult = {
-  predictions?: RoboflowPrediction[];
-  image?: RoboflowImageMeta;
-  [key: string]: any;
-};
+// Qwen per-image result
+export interface QwenResult {
+  description: string;
+  severityScore: number;
+  repairRecommendation?: string;
+}
 
-export type QwenResult = {
-  description?: string;
-  severityScore?: number;
-  mock?: boolean;
-};
-
-export type SingleImageAnalysis = {
+// Per-return image analysis
+export interface ReturnedImageAnalysis {
   index: number;
   filename: string;
-  hash?: string;
-  yolo: RoboflowResult | null;
+  hash: string;
+  yolo: YoloResult;
   qwen: QwenResult;
-  severityScore: number;
-};
+  // Overall severity for this image (including pre-existing)
+  overallSeverity: number;
+}
 
-export type ReturnedImageAnalysis = SingleImageAnalysis;
+// Per-pickup image analysis
+export interface PickupImageAnalysis {
+  index: number;
+  filename: string;
+  hash: string;
+  yolo: YoloResult;
+  qwen: QwenResult;
+  overallSeverity: number;
+}
 
-export type DamagePairing = {
+// Return–pickup pairing metadata
+export interface ImagePairing {
   returnIndex: number;
   returnFilename: string;
   pickupIndex: number | null;
   pickupFilename: string | null;
   score: number;
-};
+  isIdentical: boolean;
+}
 
-export type PerImageComparison = {
+// Comparison per return image (new vs pre-existing)
+export interface PerImageComparison {
   returnImageIndex: number;
   returnFilename: string;
   pairedPickupIndex: number | null;
-  pairedPickupFilename: string | null;
+  pairedPickupFilename?: string | null;
+  isIdenticalImage: boolean;
 
+  // NEW vs pre-existing damage lists
   newDamages: Array<{
     class: string;
-    confidenceReturn: number;
+    confidence: number;
     returnImageIndex: number;
-    returnFilename: string;
   }>;
 
-  preExistingDamages: Array<{
-    class: string;
-    confidenceReturn: number;
-    confidencePickup: number;
-    pickupImageIndex: number | null;
-    pickupFilename: string | null;
-    returnImageIndex: number;
-    returnFilename: string;
-    iou: number;
-  }>;
+  // Full YOLO boxes for new damages
+  newDamageBoxes: YoloPrediction[];
 
-  returnSeverity: number;
-  pickupSeverity: number | null;
-};
+  // YOLO boxes for pre-existing damages
+  preExistingDamages: YoloPrediction[];
 
-export type DamageComparison = {
+  // Qwen analysis of NEW damage only
+  newDamageSeverity: number; // 0–1
+  newDamageDescription: string;
+  repairRecommendation?: string;
+  qwenAnalyzedNewDamage: boolean;
+}
+
+// Overall comparison result
+export interface ComparisonResult {
   perImage: PerImageComparison[];
-  newDamages: PerImageComparison["newDamages"][number][];
-  preExistingDamages: PerImageComparison["preExistingDamages"][number][];
-};
+  allNewDamages: YoloPrediction[];
+  allPreExistingDamages: YoloPrediction[];
+}
 
-/**
- * Aggregated summary over ALL returned images.
- * Real-world-ish model:
- * - maxSeverity: worst single view
- * - avgSeverity: average over all return images
- * - totalSeverity: sum over all return images (used for cost)
- * - severityScore: kept for backward compat; alias of maxSeverity
- */
-export type DamageSummary = {
+// Aggregated summary over ALL returned images
+export interface DamageSummary {
   maxSeverity: number;
   avgSeverity: number;
   totalSeverity: number;
-  severityScore: number; // = maxSeverity
+  severityScore: number;
   estimatedRepairCost: number;
+  newDamageCount: number;
+  preExistingDamageCount: number;
   worstImageIndex: number | null;
   worstImageFilename: string | null;
-};
+  worstDamageDescription: string | null;
+  worstRepairRecommendation?: string | null;
+  reason: string;
+  analysisMethod: "identical_bypass" | "no_new_damage" | "hybrid_yolo_qwen";
+}
 
-export type DamageReport = {
-  pickup?: {
-    filenames?: string[];
-    analyses?: SingleImageAnalysis[];
+// Main report structure returned from the API
+export interface DamageReport {
+  pickup: {
+    filenames: string[];
+    analyses: PickupImageAnalysis[];
   };
-  returned?: {
-    filenames?: string[];
-    analyses?: ReturnedImageAnalysis[];
+  returned: {
+    filenames: string[];
+    analyses: ReturnedImageAnalysis[];
   };
 
-  /**
-   * Convenience alias used by the UI (per-image analyses for all returned images)
-   */
-  returnedAnalyses?: ReturnedImageAnalysis[];
+  pairings: ImagePairing[];
+  comparison: ComparisonResult;
+  summary: DamageSummary;
 
-  /**
-   * For backward compatibility / convenience, often the "worst" image analysis
-   */
-  yolo?: RoboflowResult | null;
+  // Legacy fields (for backward compatibility / convenience)
+  yolo?: YoloResult | null;
   qwen?: QwenResult | null;
+}
 
-  comparison?: DamageComparison;
-  summary?: DamageSummary;
-};
-
-export type BoxOverlay = {
+// Box overlays for the UI
+export interface BoxOverlay {
   id: number;
   left: number;
   top: number;
   width: number;
   height: number;
   label: string;
-  confidence: number;
+  confidence?: number;
   color: string;
-};
+  isNew?: boolean;
+  isPreExisting?: boolean;
+}

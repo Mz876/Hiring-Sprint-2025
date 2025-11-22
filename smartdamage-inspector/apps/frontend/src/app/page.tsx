@@ -77,6 +77,7 @@ export default function HomePage() {
     try {
       setIsLoading(true);
       const data = await analyzeDamage({ pickupFiles, returnedFiles });
+      console.log("📊 Analysis result:", data);
       setReport(data);
     } catch (err) {
       console.error("analyze error:", err);
@@ -88,11 +89,9 @@ export default function HomePage() {
     }
   };
 
-  // Per-image analysis for active return
   const currentAnalysis: ReturnedImageAnalysis | undefined =
-    report?.returnedAnalyses?.[activeReturnIndex];
+    report?.returned?.analyses?.[activeReturnIndex];
 
-  // Comparison entry for active image (new vs pre-existing)
   const currentComparison: PerImageComparison | null = useMemo(() => {
     if (!report?.comparison?.perImage) return null;
     return (
@@ -102,7 +101,6 @@ export default function HomePage() {
     );
   }, [report, activeReturnIndex]);
 
-  // YOLO overlays for current image
   const yoloBoxes: BoxOverlay[] = useMemo(() => {
     if (!currentAnalysis?.yolo?.predictions || !currentAnalysis.yolo.image) {
       return [];
@@ -114,16 +112,35 @@ export default function HomePage() {
     const ih = imgMeta.height;
     if (!iw || !ih) return [];
 
+    const newDamageBoxes = currentComparison?.newDamageBoxes || [];
+    const preExistingBoxes = currentComparison?.preExistingDamages || [];
+
     return preds.map((p, i) => {
       const left = ((p.x - p.width / 2) / iw) * 100;
       const top = ((p.y - p.height / 2) / ih) * 100;
       const width = (p.width / iw) * 100;
       const height = (p.height / ih) * 100;
 
-      const cls = (p.class || "").toLowerCase();
-      let color = "rgba(34,197,94,0.9)"; // default green
-      if (cls.includes("mod")) color = "rgba(234,179,8,0.9)";
-      if (cls.includes("sev")) color = "rgba(248,113,113,0.9)";
+      const isNew = newDamageBoxes.some((nb) => 
+        Math.abs(nb.x - p.x) < 1 && 
+        Math.abs(nb.y - p.y) < 1
+      );
+      
+      const isPreExisting = preExistingBoxes.some((pb) => 
+        Math.abs(pb.x - p.x) < 1 && 
+        Math.abs(pb.y - p.y) < 1
+      );
+
+      let color = "rgba(234,179,8,0.9)";
+      let label = p.class || "damage";
+
+      if (isNew) {
+        color = "rgba(239,68,68,0.9)";
+        label = `🆕 ${p.class || "damage"}`;
+      } else if (isPreExisting) {
+        color = "rgba(34,197,94,0.9)";
+        label = `✓ ${p.class || "damage"}`;
+      }
 
       return {
         id: i,
@@ -131,12 +148,14 @@ export default function HomePage() {
         top,
         width,
         height,
-        label: p.class,
+        label,
         confidence: p.confidence,
         color,
+        isNew,
+        isPreExisting,
       };
     });
-  }, [currentAnalysis]);
+  }, [currentAnalysis, currentComparison]);
 
   const handleClearAll = () => {
     setPickupFiles([]);
@@ -160,9 +179,6 @@ export default function HomePage() {
   const hasDetections =
     !!currentAnalysis?.yolo?.predictions &&
     currentAnalysis.yolo.predictions.length > 0;
-
-  const activeDescription =
-    currentAnalysis?.qwen?.description ?? report?.qwen?.description ?? null;
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4">
@@ -203,9 +219,7 @@ export default function HomePage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Pickup & Return Upload Grids */}
             <div className="grid md:grid-cols-2 gap-6">
-              {/* Pickup images */}
               <div className="space-y-2">
                 <p className="text-[11px] uppercase text-slate-500 tracking-wide">
                   Step 1 · Pickup (before)
@@ -219,7 +233,6 @@ export default function HomePage() {
                 />
               </div>
 
-              {/* Returned images */}
               <div className="space-y-4">
                 <div className="space-y-2">
                   <p className="text-[11px] uppercase text-slate-500 tracking-wide">
@@ -242,14 +255,12 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Error */}
             {error && (
               <p className="text-sm text-red-400 bg-red-950/40 border border-red-900 rounded-lg px-4 py-2">
                 {error}
               </p>
             )}
 
-            {/* Submit */}
             <div className="flex items-center justify-between gap-4">
               <motion.button
                 type="submit"
@@ -271,7 +282,7 @@ export default function HomePage() {
               </motion.button>
 
               <p className="text-[11px] text-slate-500">
-                We don’t store your images. Analysis runs in real time on each
+                We don't store your images. Analysis runs in real time on each
                 upload.
               </p>
             </div>
@@ -281,7 +292,6 @@ export default function HomePage() {
         {/* Damage Preview + Report */}
         {(activeReturnPreviewUrl || report || isLoading) && (
           <section className="grid md:grid-cols-2 gap-6">
-            {/* Left: Damage Preview / Skeleton */}
             {isLoading && !report ? (
               <DamagePreviewSkeleton />
             ) : (
@@ -294,7 +304,6 @@ export default function HomePage() {
               />
             )}
 
-            {/* Right: Report / Skeleton */}
             {isLoading && !report ? (
               <ReportSkeleton />
             ) : (
@@ -306,7 +315,7 @@ export default function HomePage() {
                   <div className="grid grid-cols-1 gap-3 text-sm">
                     <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
                       <p className="text-xs uppercase text-slate-500 mb-1">
-                        Severity (worst image)
+                        Severity (worst new damage)
                       </p>
                       <p className="text-lg font-semibold">
                         {report.summary?.severityScore !== undefined
@@ -318,6 +327,11 @@ export default function HomePage() {
                       {report.summary?.worstImageFilename && (
                         <p className="text-xs text-slate-500 mt-1">
                           Worst: {report.summary.worstImageFilename}
+                        </p>
+                      )}
+                      {report.summary?.analysisMethod && (
+                        <p className="text-xs text-emerald-400 mt-1">
+                          Method: {report.summary.analysisMethod}
                         </p>
                       )}
                     </div>
@@ -337,7 +351,7 @@ export default function HomePage() {
                           <span className="font-semibold text-slate-200">
                             {report.summary.avgSeverity.toFixed(2)}
                           </span>
-                        </p>                     
+                        </p>
                       </div>
                     )}
 
@@ -350,6 +364,31 @@ export default function HomePage() {
                           ? `$${report.summary.estimatedRepairCost}`
                           : "N/A"}
                       </p>
+                      {report.summary?.reason && (
+                        <p className="text-xs text-slate-500 mt-1">
+                          {report.summary.reason}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
+                      <p className="text-xs uppercase text-slate-500 mb-1">
+                        Damage breakdown
+                      </p>
+                      <div className="flex items-center gap-4 text-sm">
+                        <div>
+                          <span className="text-rose-400 font-semibold">
+                            {report.summary?.newDamageCount ?? 0}
+                          </span>
+                          <span className="text-slate-500 ml-1">new</span>
+                        </div>
+                        <div>
+                          <span className="text-emerald-400 font-semibold">
+                            {report.summary?.preExistingDamageCount ?? 0}
+                          </span>
+                          <span className="text-slate-500 ml-1">pre-existing</span>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="bg-slate-950/60 rounded-xl p-4 border border-slate-800">
@@ -375,16 +414,62 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  {/* Per-image Qwen description */}
-                  <div className="space-y-2">
+                  {/* UPDATED: Show ONLY focused analysis */}
+                  <div className="space-y-3">
                     <h3 className="text-sm font-semibold text-slate-200">
-                      AI Damage Narrative (selected image)
+                      Damage Analysis (selected image)
                     </h3>
-                    <p className="text-sm text-slate-300 bg-slate-950/60 border border-slate-800 rounded-xl p-4">
-                      {activeDescription ??
-                        "No description returned by the AI service for this image."}
-                    </p>
-
+                    
+                    {/* Show focused analysis if new damage exists */}
+                    {currentComparison?.newDamageDescription && 
+                     currentComparison.newDamages?.length > 0 ? (
+                      <div className="text-sm text-slate-300 bg-rose-950/20 border border-rose-900/30 rounded-xl p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-xs uppercase text-rose-400">
+                            🆕 New Damage Detected
+                          </p>
+                          {currentComparison.newDamageSeverity > 0 && (
+                            <span className="text-xs text-rose-300">
+                              Severity: {Math.round(currentComparison.newDamageSeverity * 100)}/100
+                            </span>
+                          )}
+                        </div>
+                        <p className="leading-relaxed">{currentComparison.newDamageDescription}</p>
+                        {currentComparison.repairRecommendation && (
+                          <div className="mt-3 pt-3 border-t border-rose-900/30">
+                            <p className="text-xs text-slate-400">
+                              <strong className="text-slate-300">Repair Recommendation:</strong>
+                              <br />
+                              {currentComparison.repairRecommendation}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ) : currentComparison?.isIdenticalImage ? (
+                      <div className="text-sm text-slate-400 bg-blue-950/20 border border-blue-900/30 rounded-xl p-4">
+                        <p className="text-xs uppercase text-blue-400 mb-2">
+                          ℹ️ Identical Image
+                        </p>
+                        <p>This image is identical to the pickup image. No new damage detected.</p>
+                      </div>
+                    ) : (currentComparison?.preExistingDamages?.length ?? 0) > 0 ? (
+                      <div className="text-sm text-slate-400 bg-emerald-950/20 border border-emerald-900/30 rounded-xl p-4">
+                        <p className="text-xs uppercase text-emerald-400 mb-2">
+                          ✓ No New Damage
+                        </p>
+                        <p>
+                          All detected damage ({currentComparison?.preExistingDamages?.length ?? 0} item{(currentComparison?.preExistingDamages?.length ?? 0) !== 1 ? 's' : ''}) 
+                          was already present at pickup. No repair charges for this image.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-slate-400 bg-slate-950/60 border border-slate-800 rounded-xl p-4">
+                        <p className="text-xs uppercase text-slate-500 mb-2">
+                          No Damage Detected
+                        </p>
+                        <p>No damage was detected in this image by the AI model.</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )
